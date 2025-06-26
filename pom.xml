@@ -43,7 +43,7 @@
         <url>https://github.com/wso2-extensions/identity-oauth-privatekey-jwthandler.git</url>
         <developerConnection>scm:git:https://github.com/wso2-extensions/identity-oauth-privatekey-jwthandler.git</developerConnection>
         <tag>HEAD</tag>
-</scm>
+    </scm>
 
     <dependencyManagement>
         <dependencies>
