@@ -19,7 +19,6 @@
 package org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt;
 
 import org.mockito.Mockito;
-import org.powermock.reflect.internal.WhiteboxImpl;
 import org.testng.Assert;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
@@ -141,7 +140,6 @@ public class PrivateKeyJWTClientAuthenticatorTest {
         IdpMgtServiceComponentHolder.getInstance().setRealmService(realmService);
         Map<String, Object> configuration = new HashMap<>();
         configuration.put("OAuth.OpenIDConnect.IDTokenIssuerID", "http://localhost:9443/oauth2/token");
-        WhiteboxImpl.setInternalState(IdentityUtil.class, "configuration", configuration);
         JWTClientAuthenticatorConfig jwtClientAuthenticatorConfig = new JWTClientAuthenticatorConfig();
         jwtClientAuthenticatorConfig.setEnableTokenReuse(true);
         JWTAuthenticationConfigurationDAO mockDAO = Mockito.mock(JWTAuthenticationConfigurationDAO

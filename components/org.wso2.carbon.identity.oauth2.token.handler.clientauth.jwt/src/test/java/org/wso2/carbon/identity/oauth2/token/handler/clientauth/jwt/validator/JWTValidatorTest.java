@@ -20,14 +20,15 @@ package org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.validator;
 
 import com.nimbusds.jwt.SignedJWT;
 import org.apache.commons.codec.binary.Base64;
+import org.mockito.MockedStatic;
 import org.mockito.Mockito;
-import org.powermock.reflect.internal.WhiteboxImpl;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 import org.wso2.carbon.base.CarbonBaseConstants;
 import org.wso2.carbon.context.PrivilegedCarbonContext;
 import org.wso2.carbon.core.util.KeyStoreManager;
+import org.wso2.carbon.identity.application.common.model.IdentityProvider;
 import org.wso2.carbon.identity.application.common.model.ServiceProvider;
 import org.wso2.carbon.identity.application.mgt.ApplicationManagementService;
 import org.wso2.carbon.identity.common.testng.WithAxisConfiguration;
@@ -36,13 +37,13 @@ import org.wso2.carbon.identity.common.testng.WithH2Database;
 import org.wso2.carbon.identity.common.testng.WithKeyStore;
 import org.wso2.carbon.identity.common.testng.WithRealmService;
 import org.wso2.carbon.identity.core.util.IdentityTenantUtil;
-import org.wso2.carbon.identity.core.util.IdentityUtil;
 import org.wso2.carbon.identity.oauth2.client.authentication.OAuthClientAuthnException;
 import org.wso2.carbon.identity.oauth2.internal.OAuth2ServiceComponentHolder;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.Constants;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.internal.JWTServiceComponent;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.internal.JWTServiceDataHolder;
 import org.wso2.carbon.identity.testutil.ReadCertStoreSampleUtil;
+import org.wso2.carbon.idp.mgt.IdentityProviderManager;
 import org.wso2.carbon.idp.mgt.internal.IdpMgtServiceComponentHolder;
 import org.wso2.carbon.user.api.UserRealm;
 import org.wso2.carbon.user.core.service.RealmService;
@@ -60,7 +61,9 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
-import static org.mockito.Matchers.anyString;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.Constants.REJECT_BEFORE_IN_MINUTES;
@@ -129,12 +132,11 @@ public class JWTValidatorTest {
         KeyStoreManager keyStoreManager = Mockito.mock(KeyStoreManager.class);
         ConcurrentHashMap<String, KeyStoreManager> mtKeyStoreManagers = new ConcurrentHashMap();
         mtKeyStoreManagers.put(String.valueOf(SUPER_TENANT_ID), keyStoreManager);
-        WhiteboxImpl.setInternalState(KeyStoreManager.class, "mtKeyStoreManagers", mtKeyStoreManagers);
         cert = (X509Certificate) CertificateFactory.getInstance("X.509").generateCertificate(
                 new ByteArrayInputStream(Base64.decodeBase64(CERTIFICATE)));
-        Mockito.when(keyStoreManager.getDefaultPrimaryCertificate()).thenReturn(cert);
-        Mockito.when(keyStoreManager.getPrimaryKeyStore()).thenReturn(serverKeyStore);
-        Mockito.when(keyStoreManager.getKeyStore("wso2carbon.jks")).thenReturn(serverKeyStore);
+        when(keyStoreManager.getDefaultPrimaryCertificate()).thenReturn(cert);
+        when(keyStoreManager.getPrimaryKeyStore()).thenReturn(serverKeyStore);
+        when(keyStoreManager.getKeyStore("wso2carbon.jks")).thenReturn(serverKeyStore);
 
         RealmService realmService = IdentityTenantUtil.getRealmService();
         UserRealm userRealm = realmService.getTenantUserRealm(SUPER_TENANT_ID);
@@ -149,7 +151,6 @@ public class JWTValidatorTest {
         configuration.put("OAuth.OpenIDConnect.FAPI.AllowedSignatureAlgorithms.AllowedSignatureAlgorithm",
                 Arrays.asList("PS256", "ES256", "RS512"));
         configuration.put("OAuth.MutualTLSAliases.Enabled", "false");
-        WhiteboxImpl.setInternalState(IdentityUtil.class, "configuration", configuration);
     }
 
     @DataProvider(name = "provideJWT")
@@ -272,13 +273,19 @@ public class JWTValidatorTest {
     public void testValidateToken(String jwt, Object properties, boolean expected, String errorMsg) throws Exception {
 
         ServiceProvider mockedServiceProvider = Mockito.mock(ServiceProvider.class);
-        Mockito.when(mockedServiceProvider.getCertificateContent()).thenReturn(CERTIFICATE);
+        when(mockedServiceProvider.getCertificateContent()).thenReturn(CERTIFICATE);
         ApplicationManagementService mockedApplicationManagementService = Mockito.mock(ApplicationManagementService
                 .class);
-        Mockito.when(mockedApplicationManagementService.getServiceProviderByClientId(anyString(), anyString(),
+        when(mockedApplicationManagementService.getServiceProviderByClientId(anyString(), anyString(),
                 anyString())).thenReturn(mockedServiceProvider);
         OAuth2ServiceComponentHolder.setApplicationMgtService(mockedApplicationManagementService);
-        try {
+        try (MockedStatic<IdentityProviderManager> mockedIdentityProviderManager =
+                    mockStatic(IdentityProviderManager.class);) {
+            IdentityProviderManager mockedIdpManager = Mockito.mock(IdentityProviderManager.class);
+            IdentityProvider mockedIdp = Mockito.mock(IdentityProvider.class);
+            when(mockedIdpManager.getResidentIdP(anyString())).thenReturn(mockedIdp);
+            mockedIdentityProviderManager.when(IdentityProviderManager::getInstance)
+                    .thenReturn(mockedIdpManager);
             checkIfTenantIdColumnIsAvailableInIdnOidcAuthTable();
             JWTValidator jwtValidator = getJWTValidator((Properties) properties);
             SignedJWT signedJWT = SignedJWT.parse(jwt);
