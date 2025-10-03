@@ -65,6 +65,7 @@ import java.security.interfaces.RSAPublicKey;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -87,6 +88,7 @@ public class JWTValidator {
     public static final String PS = "PS";
     private static final String IDP_ENTITY_ID = "IdPEntityId";
     private static final String PROP_ID_TOKEN_ISSUER_ID = "OAuth.OpenIDConnect.IDTokenIssuerID";
+    private static final String PROP_FAPI_VERSION = "OAuth.OpenIDConnect.FAPI.FAPIVersion";
     private static final String FAPI_SIGNATURE_ALG_CONFIGURATION = "OAuth.OpenIDConnect.FAPI." +
             "AllowedSignatureAlgorithms.AllowedSignatureAlgorithm";
     private static final String MTLS_ALIASES_ENABLED = "OAuth.MutualTLSAliases.Enabled";
@@ -160,10 +162,21 @@ public class JWTValidator {
                 return false;
             }
 
-            /* A list of valid audiences (issuer identifier, token endpoint URL or pushed authorization request
-            endpoint URL) should be supported for PAR and not just a single valid audience.
-            https://datatracker.ietf.org/doc/html/rfc9126 */
-            List<String> acceptedAudienceList = getValidAudiences(tenantDomain, requestUrl);
+            List<String> acceptedAudienceList;
+            try {
+                if (OAuth2Util.isFapiConformantApp(consumerKey) &&
+                        Constants.FAPI2.equals(IdentityUtil.getProperty(PROP_FAPI_VERSION))) {
+                    acceptedAudienceList = Collections.singletonList(IdentityUtil.getProperty(PROP_ID_TOKEN_ISSUER_ID));
+                } else {
+                /* A list of valid audiences (issuer identifier, token endpoint URL or pushed authorization request
+                endpoint URL) should be supported for PAR and not just a single valid audience.
+                https://datatracker.ietf.org/doc/html/rfc9126 */
+                    acceptedAudienceList = getValidAudiences(tenantDomain, requestUrl);
+                }
+            } catch (InvalidOAuthClientException e) {
+                throw new OAuthClientAuthnException("Error occurred while retrieving client information.",
+                        OAuth2ErrorCodes.INVALID_CLIENT);
+            }
 
             long expTime = 0;
             long issuedTime = 0;
@@ -213,7 +226,7 @@ public class JWTValidator {
             }
 
             //Validate signature validation, audience, nbf,exp time, jti.
-            if (!validateAudience(acceptedAudienceList, audience)
+            if (!validateAudienceFormat(audience, consumerKey) || !validateAudience(acceptedAudienceList, audience)
                     || !validateJWTWithExpTime(expirationTime, currentTimeInMillis, timeStampSkewMillis)
                     || !validateNotBeforeClaim(currentTimeInMillis, timeStampSkewMillis, nbf)
                     || !validateAgeOfTheToken(issuedAtTime, currentTimeInMillis, timeStampSkewMillis)
@@ -311,6 +324,34 @@ public class JWTValidator {
                     expectedAudiences);
         }
         throw new OAuthClientAuthnException("Failed to match audience values.", OAuth2ErrorCodes.INVALID_REQUEST);
+    }
+
+    /**
+     * Validate 'aud' claim format. Multiple audiences are not allowed in FAPI 2.0 compliant applications.
+     *
+     * @param audience - List of audience values in the 'aud' claim of the JWT.
+     * @param consumerKey - OAuth client id of the application.
+     * @return true if the audience format is valid.
+     *
+     * @throws OAuthClientAuthnException Throw OAuthClientAuthnException if the audience format is invalid.
+     */
+    private boolean validateAudienceFormat(List<String> audience, String consumerKey) throws OAuthClientAuthnException {
+
+        try {
+            if (OAuth2Util.isFapiConformantApp(consumerKey) &&
+                    Constants.FAPI2.equals(IdentityUtil.getProperty(PROP_FAPI_VERSION))) {
+                if (audience.size() > 1) {
+                    log.debug("Multiple audience values in client assertion are not allowed for " +
+                            "FAPI 2.0 applications.");
+                    throw new OAuthClientAuthnException("Client assertion contains multiple audience values.",
+                            OAuth2ErrorCodes.INVALID_REQUEST);
+                }
+            }
+        } catch (InvalidOAuthClientException | IdentityOAuth2Exception e) {
+            throw new OAuthClientAuthnException("Error occurred while retrieving client information.",
+                    OAuth2ErrorCodes.INVALID_CLIENT);
+        }
+        return true;
     }
 
     // "REQUIRED. JWT ID. A unique identifier for the token, which can be used to prevent reuse of the token.
