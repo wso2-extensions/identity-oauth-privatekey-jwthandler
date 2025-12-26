@@ -28,7 +28,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>org.wso2.carbon.extension.identity.oauth.addons</groupId>
     <artifactId>identity-oauth2-extenstions</artifactId>
-    <version>2.5.33-SNAPSHOT</version>
+    <version>2.5.35-SNAPSHOT</version>
     <packaging>pom</packaging>
     <name>Identity OAuth PrivateKey JWT Handler</name>
     <url>http://wso2.org</url>
@@ -125,7 +125,7 @@
             <dependency>
                 <groupId>org.wso2.carbon.identity.framework</groupId>
                 <artifactId>org.wso2.carbon.identity.application.mgt</artifactId>
-                <version>${carbon.identity.app.mgt.version}</version>
+                <version>${carbon.identity.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.apache.oltu.oauth2</groupId>
@@ -235,17 +235,16 @@
                 <scope>test</scope>
                 <version>${jacoco.version}</version>
             </dependency>
-            <!-- https://mvnrepository.com/artifact/org.powermock/powermock-module-testng -->
             <dependency>
-                <groupId>org.powermock</groupId>
-                <artifactId>powermock-module-testng</artifactId>
-                <version>${powermock.version}</version>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-core</artifactId>
+                <version>${mockito.version}</version>
                 <scope>test</scope>
             </dependency>
             <dependency>
-                <groupId>org.powermock</groupId>
-                <artifactId>powermock-api-mockito</artifactId>
-                <version>${powermock.version}</version>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-testng</artifactId>
+                <version>${mockito-testng.version}</version>
                 <scope>test</scope>
             </dependency>
             <dependency>
@@ -443,11 +442,11 @@
 
     <properties>
         <carbon.identity.app.mgt.version>7.3.26</carbon.identity.app.mgt.version>
-        <carbon.identity.version>5.20.322</carbon.identity.version>
-        <carbon.identity.application.common.version>5.25.305</carbon.identity.application.common.version>
+        <carbon.identity.version>7.8.506</carbon.identity.version>
+        <carbon.identity.application.common.version>7.8.506</carbon.identity.application.common.version>
         <carbon.utils.version>4.9.10</carbon.utils.version>
         <identity.inbound.auth.oauth.version>7.0.286</identity.inbound.auth.oauth.version>
-        <org.wso2.carbon.identity.core.version>7.8.111</org.wso2.carbon.identity.core.version>
+        <org.wso2.carbon.identity.core.version>7.8.506</org.wso2.carbon.identity.core.version>
         <org.wso2.carbon.database.utils.version>2.0.7</org.wso2.carbon.database.utils.version>
         <org.wso2.carbon.database.utils.version.range>[2.0.0,2.2.0)</org.wso2.carbon.database.utils.version.range>
 
@@ -505,12 +504,11 @@
 
         <!--Test Dependencies-->
         <commons.collections.version>3.2.2</commons.collections.version>
-        <testng.version>6.9.10</testng.version>
-        <jacoco.version>0.7.9</jacoco.version>
+        <testng.version>7.10.1</testng.version>
+        <jacoco.version>0.8.12</jacoco.version>
         <mockito.version>5.3.1</mockito.version>
-        <powermock.version>1.6.6</powermock.version>
         <mockito-testng.version>0.5.2</mockito-testng.version>
-        <maven.surefire.plugin.version>2.18.1</maven.surefire.plugin.version>
+        <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
         <javaee.web.api.version>7.0</javaee.web.api.version>
         <h2database.version>2.1.210</h2database.version>
         <org.wso2.carbon.identity.testutil.version>5.11.9</org.wso2.carbon.identity.testutil.version>

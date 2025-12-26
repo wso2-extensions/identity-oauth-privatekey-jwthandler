@@ -23,6 +23,7 @@ import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 import org.wso2.carbon.identity.common.testng.WithCarbonHome;
 import org.wso2.carbon.identity.common.testng.WithKeyStore;
+import org.wso2.carbon.identity.common.testng.WithRealmService;
 import org.wso2.carbon.identity.configuration.mgt.core.ConfigurationManager;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.core.dao.cache.JWTConfigCache;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.core.dao.cache.JWTConfigCacheEntry;
@@ -37,6 +38,7 @@ import static org.testng.AssertJUnit.assertNotNull;
 
 @WithCarbonHome
 @WithKeyStore
+@WithRealmService
 public class JWTClientAuthenticatorMgtServiceTest {
 
     private JWTAuthenticationConfigurationDAOImpl jwtAuthenticationConfigurationDAO;

@@ -18,16 +18,14 @@
 
 package org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.storage;
 
-import org.mockito.Mockito;
-import org.powermock.core.classloader.annotations.PrepareForTest;
-import org.powermock.modules.testng.PowerMockTestCase;
+import org.mockito.MockedStatic;
 import org.testng.annotations.AfterClass;
+import org.testng.annotations.AfterMethod;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.BeforeMethod;
 import org.testng.annotations.Test;
 import org.wso2.carbon.identity.application.authentication.framework.util.FrameworkUtils;
 import org.wso2.carbon.identity.core.util.IdentityDatabaseUtil;
-import org.wso2.carbon.identity.core.util.IdentityUtil;
 import org.wso2.carbon.identity.core.util.JdbcUtils;
 import org.wso2.carbon.identity.oauth2.client.authentication.OAuthClientAuthnException;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.Constants;
@@ -39,8 +37,8 @@ import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.util.JWTTest
 import java.sql.Connection;
 import java.util.List;
 
-import static org.powermock.api.mockito.PowerMockito.mockStatic;
-import static org.powermock.api.mockito.PowerMockito.when;
+import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
 import static org.testng.Assert.assertNotNull;
@@ -49,11 +47,14 @@ import static org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.util.
 import static org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.util.JWTTestUtil.spyConnection;
 import static org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.util.Util.checkIfTenantIdColumnIsAvailableInIdnOidcAuthTable;
 
-@PrepareForTest({IdentityUtil.class, JdbcUtils.class, IdentityDatabaseUtil.class, FrameworkUtils.class})
-public class JWTStorageManagerTest extends PowerMockTestCase {
+public class JWTStorageManagerTest {
 
     private JWTStorageManager jwtStorageManager;
     private Connection spyConnection;
+
+    private MockedStatic<IdentityDatabaseUtil> mockedIdentityDatabaseUtil;
+    private MockedStatic<JdbcUtils> mockedJdbcUtils;
+    private MockedStatic<FrameworkUtils> mockedFrameworkUtils;
 
 
     @BeforeClass
@@ -66,15 +67,36 @@ public class JWTStorageManagerTest extends PowerMockTestCase {
     @BeforeMethod
     public void init() throws Exception {
 
-        mockStatic(IdentityDatabaseUtil.class);
+        mockedIdentityDatabaseUtil = mockStatic(IdentityDatabaseUtil.class);
         spyConnection = spyConnection(JWTTestUtil.getConnection());
-        Mockito.when(IdentityDatabaseUtil.getDBConnection()).thenReturn(spyConnection);
-        mockStatic(JdbcUtils.class);
-        mockStatic(FrameworkUtils.class);
-        Mockito.when(FrameworkUtils.isTableColumnExists(Constants.SQLQueries.IDN_OIDC_JTI,
+        when(IdentityDatabaseUtil.getDBConnection()).thenReturn(spyConnection);
+        mockedJdbcUtils = mockStatic(JdbcUtils.class);
+        mockedFrameworkUtils = mockStatic(FrameworkUtils.class);
+        when(FrameworkUtils.isTableColumnExists(Constants.SQLQueries.IDN_OIDC_JTI,
                 Constants.SQLQueries.TENANT_ID)).thenReturn(true);
         checkIfTenantIdColumnIsAvailableInIdnOidcAuthTable();
 
+    }
+
+    @AfterMethod
+    public void tearDownMethod() {
+
+        try {
+            if (spyConnection != null && !spyConnection.isClosed()) {
+                spyConnection.close();
+            }
+        } catch (Exception e) {
+            // Ignore
+        }
+        if (mockedIdentityDatabaseUtil != null) {
+            mockedIdentityDatabaseUtil.close();
+        }
+        if (mockedJdbcUtils != null) {
+            mockedJdbcUtils.close();
+        }
+        if (mockedFrameworkUtils != null) {
+            mockedFrameworkUtils.close();
+        }
     }
 
     @AfterClass

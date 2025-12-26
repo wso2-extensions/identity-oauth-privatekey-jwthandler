@@ -21,6 +21,7 @@ package org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.validator;
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSHeader;
 import com.nimbusds.jose.JWSVerifier;
+import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jose.crypto.RSASSAVerifier;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
@@ -61,6 +62,7 @@ import org.wso2.carbon.user.api.UserStoreException;
 
 import java.security.PublicKey;
 import java.security.cert.X509Certificate;
+import java.security.interfaces.ECPublicKey;
 import java.security.interfaces.RSAPublicKey;
 import java.text.ParseException;
 import java.util.ArrayList;
@@ -85,6 +87,7 @@ public class JWTValidator {
     public static final String KEYSTORE_FILE_EXTENSION = ".jks";
     public static final String RS = "RS";
     public static final String PS = "PS";
+    public static final String ES = "ES";
     private static final String IDP_ENTITY_ID = "IdPEntityId";
     private static final String PROP_ID_TOKEN_ISSUER_ID = "OAuth.OpenIDConnect.IDTokenIssuerID";
     private static final String FAPI_SIGNATURE_ALG_CONFIGURATION = "OAuth.OpenIDConnect.FAPI." +
@@ -593,6 +596,7 @@ public class JWTValidator {
             throw new OAuthClientAuthnException(errorMessage, OAuth2ErrorCodes.INVALID_REQUEST);
         }
         try {
+            IdentityUtil.validateJWTDepth(signedJWT.serialize());
             claimsSet = signedJWT.getJWTClaimsSet();
             if (claimsSet == null) {
                 errorMessage = "Claim values are empty in the given JSON Web Token.";
@@ -660,6 +664,21 @@ public class JWTValidator {
                 } else {
                     throw new OAuthClientAuthnException("Signature validation failed. Public key is not an RSA " +
                             "public key.", OAuth2ErrorCodes.INVALID_REQUEST);
+                }
+            } else if (alg.indexOf(ES) == 0) {
+                // Support for ES256, ES384, ES512 (Elliptic Curve Digital Signature Algorithm).
+                PublicKey publicKey = x509Certificate.getPublicKey();
+                if (publicKey instanceof ECPublicKey) {
+                    try {
+                        verifier = new ECDSAVerifier((ECPublicKey) publicKey);
+                    } catch (JOSEException e) {
+                        log.error("Error creating ECDSAVerifier for algorithm " + alg + ": " + e.getMessage());
+                        return false;
+                    }
+                } else {
+                    throw new OAuthClientAuthnException(
+                            "Signature validation failed. Public key is not an EC public key.",
+                            OAuth2ErrorCodes.INVALID_REQUEST);
                 }
             } else {
                 throw new OAuthClientAuthnException("Signature Algorithm not supported : " + alg,

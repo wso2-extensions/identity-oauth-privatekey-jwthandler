@@ -22,6 +22,7 @@ import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 import org.wso2.carbon.identity.common.testng.WithCarbonHome;
 import org.wso2.carbon.identity.common.testng.WithKeyStore;
+import org.wso2.carbon.identity.common.testng.WithRealmService;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.core.model.JWTClientAuthenticatorConfig;
 
 import static org.testng.Assert.assertEquals;
@@ -30,6 +31,7 @@ import static org.testng.Assert.assertNull;
 
 @WithCarbonHome
 @WithKeyStore
+@WithRealmService
 public class JWTConfigCacheTest {
 
     private JWTConfigCache jwtConfigCache;

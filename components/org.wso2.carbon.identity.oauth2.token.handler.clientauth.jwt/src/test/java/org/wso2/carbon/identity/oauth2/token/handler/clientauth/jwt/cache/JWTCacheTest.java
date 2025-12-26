@@ -24,6 +24,7 @@ import org.testng.annotations.Test;
 import org.wso2.carbon.base.CarbonBaseConstants;
 import org.wso2.carbon.identity.common.testng.WithCarbonHome;
 import org.wso2.carbon.identity.common.testng.WithKeyStore;
+import org.wso2.carbon.identity.common.testng.WithRealmService;
 
 import java.security.Key;
 import java.security.KeyStore;
@@ -35,6 +36,7 @@ import static org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.util.
 
 @WithCarbonHome
 @WithKeyStore
+@WithRealmService
 public class JWTCacheTest {
 
     private JWTCache jwtCache;
