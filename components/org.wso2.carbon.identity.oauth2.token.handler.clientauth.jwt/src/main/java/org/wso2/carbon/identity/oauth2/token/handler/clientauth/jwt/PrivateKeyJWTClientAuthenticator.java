@@ -175,6 +175,7 @@ public class PrivateKeyJWTClientAuthenticator extends AbstractOAuthClientAuthent
             throw new OAuthClientAuthnException(errorMessage, OAuth2ErrorCodes.INVALID_REQUEST);
         }
         try {
+            IdentityUtil.validateX5CLength(assertion);
             signedJWT = SignedJWT.parse(assertion);
         } catch (ParseException e) {
             if (log.isDebugEnabled()) {
