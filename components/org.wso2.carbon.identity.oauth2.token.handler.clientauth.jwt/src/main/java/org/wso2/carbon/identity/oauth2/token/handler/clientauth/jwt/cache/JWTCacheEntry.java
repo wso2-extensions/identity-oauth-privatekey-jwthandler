@@ -20,6 +20,7 @@ package org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.cache;
 
 import com.nimbusds.jwt.SignedJWT;
 import org.wso2.carbon.identity.core.cache.CacheEntry;
+import org.wso2.carbon.identity.core.util.IdentityUtil;
 
 import java.text.ParseException;
 
@@ -34,6 +35,7 @@ public class JWTCacheEntry extends CacheEntry {
     }
 
     public SignedJWT getJwt() throws ParseException {
+        IdentityUtil.validateX5CLength(this.encodedJWT);
         return SignedJWT.parse(this.encodedJWT);
     }
 
