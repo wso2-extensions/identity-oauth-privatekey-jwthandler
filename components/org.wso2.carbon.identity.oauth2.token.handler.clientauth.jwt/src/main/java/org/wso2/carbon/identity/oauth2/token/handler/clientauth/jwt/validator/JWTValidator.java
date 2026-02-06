@@ -67,6 +67,7 @@ import java.security.interfaces.RSAPublicKey;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -163,11 +164,16 @@ public class JWTValidator {
                 return false;
             }
 
+            List<String> acceptedAudienceList;
+            if (OAuth2Util.isFapi2Enabled()) {
+                acceptedAudienceList = Collections.singletonList(OAuth2Util.getIdTokenIssuer(tenantDomain));
+            } else {
+
             /* A list of valid audiences (issuer identifier, token endpoint URL or pushed authorization request
             endpoint URL) should be supported for PAR and not just a single valid audience.
             https://datatracker.ietf.org/doc/html/rfc9126 */
-            List<String> acceptedAudienceList = getValidAudiences(tenantDomain, requestUrl);
-
+                acceptedAudienceList = getValidAudiences(tenantDomain, requestUrl);
+            }
             long expTime = 0;
             long issuedTime = 0;
             if (expirationTime != null) {
@@ -216,7 +222,7 @@ public class JWTValidator {
             }
 
             //Validate signature validation, audience, nbf,exp time, jti.
-            if (!validateAudience(acceptedAudienceList, audience)
+            if (!validateAudience(acceptedAudienceList, audience, consumerKey)
                     || !validateJWTWithExpTime(expirationTime, currentTimeInMillis, timeStampSkewMillis)
                     || !validateNotBeforeClaim(currentTimeInMillis, timeStampSkewMillis, nbf)
                     || !validateAgeOfTheToken(issuedAtTime, currentTimeInMillis, timeStampSkewMillis)
@@ -299,10 +305,34 @@ public class JWTValidator {
         return true;
     }
 
-    // The valid audience value should either be the issuer identifier or the token endpoint URL
-    // or the pushed authorization request endpoint URL
-    private boolean validateAudience(List<String> expectedAudiences, List<String> audience)
+    /**
+     * The valid audience value should either be the issuer identifier or the token endpoint URL or the pushed
+     * authorization request endpoint URL.
+     * For FAPI 2.0 Apps, multiple audiences are not allowed.
+     *
+     * @param expectedAudiences
+     * @param audience
+     * @param consumerKey
+     * @return
+     * @throws OAuthClientAuthnException
+     */
+    private boolean validateAudience(List<String> expectedAudiences, List<String> audience, String consumerKey)
             throws OAuthClientAuthnException {
+
+        try {
+            if (OAuth2Util.isFapiConformantApp(consumerKey) &&
+                    OAuth2Util.isFapi2Enabled()) {
+                if (audience.size() > 1) {
+                    log.debug("Multiple audience values in client assertion are not allowed for " +
+                            "FAPI 2.0 applications.");
+                    throw new OAuthClientAuthnException("Client assertion contains multiple audience values.",
+                            OAuth2ErrorCodes.INVALID_REQUEST);
+                }
+            }
+        } catch (InvalidOAuthClientException | IdentityOAuth2Exception e) {
+            throw new OAuthClientAuthnException("Error occurred while retrieving client information.",
+                    OAuth2ErrorCodes.INVALID_CLIENT);
+        }
 
         for (String aud : audience) {
             if (expectedAudiences.contains(aud)) {
