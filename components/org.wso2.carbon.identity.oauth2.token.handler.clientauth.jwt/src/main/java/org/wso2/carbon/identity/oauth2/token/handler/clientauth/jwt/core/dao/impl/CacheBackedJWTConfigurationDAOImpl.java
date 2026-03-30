@@ -106,7 +106,7 @@ public class CacheBackedJWTConfigurationDAOImpl implements JWTAuthenticationConf
             log.debug("Adding JWT Authenticator configuration to Cache with Key: " + tenantDomain);
         }
 
-        JWTConfigCache.getInstance().addToCache(cacheKey, cacheEntry, tenantDomain);
+        JWTConfigCache.getInstance().addToCacheOnRead(cacheKey, cacheEntry, tenantDomain);
     }
 
     /**

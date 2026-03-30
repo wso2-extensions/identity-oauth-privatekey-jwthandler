@@ -733,14 +733,15 @@ public class JWTValidator {
             throws OAuthClientAuthnException {
 
         if (entry == null) {
-            // Update the cache with the new JWT for the same JTI.
+            // Populate the cache on read. Use putIfAbsent semantics to avoid redundant invalidation
+            // messages in clustered deployments when concurrent reads race to populate the same entry.
             JWTCacheKey jwtCacheKey;
             if (Util.isTenantIdColumnAvailableInIdnOidcAuth()) {
                 jwtCacheKey = new JWTCacheKey(jti, tenantId);
             } else {
                 jwtCacheKey = new JWTCacheKey(jti);
             }
-            jwtCache.addToCache(jwtCacheKey, new JWTCacheEntry(signedJWT));
+            jwtCache.addToCacheOnRead(jwtCacheKey, new JWTCacheEntry(signedJWT));
         } else if (preventTokenReuse) {
             throw new OAuthClientAuthnException("JWT Token with jti: " + jti + " has been replayed",
                     OAuth2ErrorCodes.INVALID_REQUEST);
