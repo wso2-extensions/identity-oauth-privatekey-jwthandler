@@ -43,5 +43,4 @@ public class JWTConfigCache extends AuthenticationBaseCache<JWTConfigCacheKey, J
         }
         return instance;
     }
-
 }
