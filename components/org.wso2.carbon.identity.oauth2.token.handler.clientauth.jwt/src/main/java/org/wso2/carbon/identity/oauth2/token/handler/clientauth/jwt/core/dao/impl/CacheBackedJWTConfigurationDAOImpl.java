@@ -72,7 +72,7 @@ public class CacheBackedJWTConfigurationDAOImpl implements JWTAuthenticationConf
         JWTClientAuthenticatorConfig jwtClientAuthenticatorConfig = privateKeyJWTAuthenticationConfigurationDAO.
                 getPrivateKeyJWTClientAuthenticationConfigurationByTenantDomain(tenantDomain);
 
-        addJWTAuthenticatorConfigurationToCache(jwtClientAuthenticatorConfig, tenantDomain);
+        addJWTAuthenticatorConfigurationToCacheOnRead(jwtClientAuthenticatorConfig, tenantDomain);
         return jwtClientAuthenticatorConfig;
     }
 
@@ -95,7 +95,7 @@ public class CacheBackedJWTConfigurationDAOImpl implements JWTAuthenticationConf
      * @param jwtClientAuthenticatorConfig The JWT Authenticator configuration that should be added to the cache.
      * @param tenantDomain                 The tenant domain specific to the cache entry.
      */
-    private void addJWTAuthenticatorConfigurationToCache(
+    private void addJWTAuthenticatorConfigurationToCacheOnRead(
             JWTClientAuthenticatorConfig jwtClientAuthenticatorConfig,
             String tenantDomain) {
 
@@ -106,7 +106,7 @@ public class CacheBackedJWTConfigurationDAOImpl implements JWTAuthenticationConf
             log.debug("Adding JWT Authenticator configuration to Cache with Key: " + tenantDomain);
         }
 
-        JWTConfigCache.getInstance().addToCache(cacheKey, cacheEntry, tenantDomain);
+        JWTConfigCache.getInstance().addToCacheOnRead(cacheKey, cacheEntry, tenantDomain);
     }
 
     /**

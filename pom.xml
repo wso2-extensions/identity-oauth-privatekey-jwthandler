@@ -442,11 +442,11 @@
 
     <properties>
         <carbon.identity.app.mgt.version>7.3.26</carbon.identity.app.mgt.version>
-        <carbon.identity.version>7.8.675</carbon.identity.version>
+        <carbon.identity.version>7.10.119</carbon.identity.version>
         <carbon.identity.application.common.version>7.8.506</carbon.identity.application.common.version>
-        <carbon.utils.version>4.9.10</carbon.utils.version>
+        <carbon.utils.version>4.12.22</carbon.utils.version>
         <identity.inbound.auth.oauth.version>7.0.286</identity.inbound.auth.oauth.version>
-        <org.wso2.carbon.identity.core.version>7.8.675</org.wso2.carbon.identity.core.version>
+        <org.wso2.carbon.identity.core.version>7.10.119</org.wso2.carbon.identity.core.version>
         <org.wso2.carbon.database.utils.version>2.0.7</org.wso2.carbon.database.utils.version>
         <org.wso2.carbon.database.utils.version.range>[2.0.0,2.2.0)</org.wso2.carbon.database.utils.version.range>
 
@@ -454,7 +454,7 @@
         <identity.carbon.auth.rest.version>1.4.47</identity.carbon.auth.rest.version>
         <identity.carbon.auth.rest.imp.pkg.version>[1.0.0,2.0.0)</identity.carbon.auth.rest.imp.pkg.version>
 
-        <carbon.kernel.version>4.6.0</carbon.kernel.version>
+        <carbon.kernel.version>4.12.22</carbon.kernel.version>
         <carbon.kernel.feature.version>4.6.0</carbon.kernel.feature.version>
         <carbon.kernel.imp.pkg.version.range>[4.5.0, 5.0.0)</carbon.kernel.imp.pkg.version.range>
         <carbon.user.api.imp.pkg.version.range>[1.0.1, 2.0.0)</carbon.user.api.imp.pkg.version.range>
