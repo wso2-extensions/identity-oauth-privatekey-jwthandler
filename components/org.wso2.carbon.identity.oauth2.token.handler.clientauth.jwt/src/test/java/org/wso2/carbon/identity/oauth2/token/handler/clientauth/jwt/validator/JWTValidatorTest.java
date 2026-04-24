@@ -37,7 +37,10 @@ import org.wso2.carbon.identity.common.testng.WithH2Database;
 import org.wso2.carbon.identity.common.testng.WithKeyStore;
 import org.wso2.carbon.identity.common.testng.WithRealmService;
 import org.wso2.carbon.identity.core.util.IdentityTenantUtil;
+import org.wso2.carbon.identity.core.util.IdentityUtil;
 import org.wso2.carbon.identity.oauth2.client.authentication.OAuthClientAuthnException;
+import org.wso2.carbon.identity.oauth2.fapi.models.FapiProfileEnum;
+import org.wso2.carbon.identity.oauth2.fapi.utils.FapiUtil;
 import org.wso2.carbon.identity.oauth2.internal.OAuth2ServiceComponentHolder;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.Constants;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.internal.JWTServiceComponent;
@@ -66,6 +69,8 @@ import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertTrue;
+import static org.testng.Assert.fail;
 import static org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.Constants.REJECT_BEFORE_IN_MINUTES;
 import static org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.util.JWTTestUtil.buildJWT;
 import static org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.util.JWTTestUtil.getJWTValidator;
@@ -313,6 +318,68 @@ public class JWTValidatorTest {
 
     }
 
+    @Test
+    public void testValidateFapi2TokenWithIssuerAudience() throws Exception {
+
+        Key key = clientKeyStore.getKey("wso2carbon", "wso2carbon".toCharArray());
+        String jwt = buildJWT(TEST_FAPI_CLIENT_ID_1, TEST_FAPI_CLIENT_ID_1, "3024", ID_TOKEN_ISSUER_ID,
+                "RS512", key, 0);
+
+        mockApplicationManagementService();
+        try (MockedStatic<IdentityProviderManager> mockedIdentityProviderManager = mockIdentityProviderManager();
+             MockedStatic<FapiUtil> mockedFapiUtil = mockStatic(FapiUtil.class);
+             MockedStatic<IdentityUtil> mockedIdentityUtil = Mockito.mockStatic(IdentityUtil.class,
+                     Mockito.CALLS_REAL_METHODS)) {
+            mockedFapiUtil.when(() -> FapiUtil.isFapiConformantApp(TEST_FAPI_CLIENT_ID_1,
+                    FapiProfileEnum.FAPI2_SECURITY)).thenReturn(true);
+            mockedFapiUtil.when(() -> FapiUtil.isFapiConformantApp(TEST_FAPI_CLIENT_ID_1)).thenReturn(true);
+            mockedIdentityUtil.when(() -> IdentityUtil.getProperty("OAuth.OpenIDConnect.IDTokenIssuerID"))
+                    .thenReturn(ID_TOKEN_ISSUER_ID);
+            mockedIdentityUtil.when(() -> IdentityUtil.getPropertyAsList(
+                    "OAuth.OpenIDConnect.FAPI.AllowedSignatureAlgorithms.AllowedSignatureAlgorithm"))
+                    .thenReturn(Arrays.asList("PS256", "ES256", "RS512"));
+
+            checkIfTenantIdColumnIsAvailableInIdnOidcAuthTable();
+            JWTValidator jwtValidator = getJWTValidator(new Properties());
+
+            assertTrue(jwtValidator.isValidAssertion(SignedJWT.parse(jwt)),
+                    "FAPI 2 client assertions with issuer audience should pass validation.");
+        }
+    }
+
+    @Test
+    public void testRejectMultipleAudiencesForFapi2Token() throws Exception {
+
+        Key key = clientKeyStore.getKey("wso2carbon", "wso2carbon".toCharArray());
+        String jwt = buildJWT(TEST_FAPI_CLIENT_ID_1, TEST_FAPI_CLIENT_ID_1, "3025",
+                Arrays.asList(ID_TOKEN_ISSUER_ID, PAR_ENDPOINT), "RS512", key, 0);
+
+        mockApplicationManagementService();
+        try (MockedStatic<IdentityProviderManager> mockedIdentityProviderManager = mockIdentityProviderManager();
+             MockedStatic<FapiUtil> mockedFapiUtil = mockStatic(FapiUtil.class);
+             MockedStatic<IdentityUtil> mockedIdentityUtil = Mockito.mockStatic(IdentityUtil.class,
+                     Mockito.CALLS_REAL_METHODS)) {
+            mockedFapiUtil.when(() -> FapiUtil.isFapiConformantApp(TEST_FAPI_CLIENT_ID_1,
+                    FapiProfileEnum.FAPI2_SECURITY)).thenReturn(true);
+            mockedFapiUtil.when(() -> FapiUtil.isFapiConformantApp(TEST_FAPI_CLIENT_ID_1)).thenReturn(true);
+            mockedIdentityUtil.when(() -> IdentityUtil.getProperty("OAuth.OpenIDConnect.IDTokenIssuerID"))
+                    .thenReturn(ID_TOKEN_ISSUER_ID);
+            mockedIdentityUtil.when(() -> IdentityUtil.getPropertyAsList(
+                    "OAuth.OpenIDConnect.FAPI.AllowedSignatureAlgorithms.AllowedSignatureAlgorithm"))
+                    .thenReturn(Arrays.asList("PS256", "ES256", "RS512"));
+
+            checkIfTenantIdColumnIsAvailableInIdnOidcAuthTable();
+            JWTValidator jwtValidator = getJWTValidator(new Properties());
+
+            try {
+                jwtValidator.isValidAssertion(SignedJWT.parse(jwt));
+                fail("FAPI 2 client assertions with multiple audience values should fail validation.");
+            } catch (OAuthClientAuthnException e) {
+                assertEquals(e.getMessage(), "Client assertion contains multiple audience values.");
+            }
+        }
+    }
+
     @Test(dependsOnMethods = "testValidateToken")
     public void testValidateTokenSignedByHmac() throws Exception {
 
@@ -323,4 +390,26 @@ public class JWTValidatorTest {
                 "Jzb21lLWF1ZGllbmNlIl19.m0RrVUrZHr1M7R4I_4dzpoWD8jNA2fKkOadEsFg9Wj4";
         SignedJWT signedJWT = SignedJWT.parse(hsSignedJWT);
     }
+
+        private void mockApplicationManagementService() throws Exception {
+
+                ServiceProvider mockedServiceProvider = Mockito.mock(ServiceProvider.class);
+                when(mockedServiceProvider.getCertificateContent()).thenReturn(CERTIFICATE);
+                ApplicationManagementService mockedApplicationManagementService =
+                                Mockito.mock(ApplicationManagementService.class);
+                when(mockedApplicationManagementService.getServiceProviderByClientId(anyString(), anyString(),
+                                anyString())).thenReturn(mockedServiceProvider);
+                OAuth2ServiceComponentHolder.setApplicationMgtService(mockedApplicationManagementService);
+        }
+
+        private MockedStatic<IdentityProviderManager> mockIdentityProviderManager() throws Exception {
+
+                MockedStatic<IdentityProviderManager> mockedIdentityProviderManager = 
+                        mockStatic(IdentityProviderManager.class);
+                IdentityProviderManager mockedIdpManager = Mockito.mock(IdentityProviderManager.class);
+                IdentityProvider mockedIdp = Mockito.mock(IdentityProvider.class);
+                when(mockedIdpManager.getResidentIdP(anyString())).thenReturn(mockedIdp);
+                mockedIdentityProviderManager.when(IdentityProviderManager::getInstance).thenReturn(mockedIdpManager);
+                return mockedIdentityProviderManager;
+        }
 }

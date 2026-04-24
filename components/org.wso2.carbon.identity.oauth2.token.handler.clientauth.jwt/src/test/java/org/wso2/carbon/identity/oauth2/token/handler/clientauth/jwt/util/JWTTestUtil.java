@@ -132,6 +132,34 @@ public class JWTTestUtil {
         return signJWTWithRSA(jwtClaimsSet, privateKey);
     }
 
+    public static String buildJWT(String issuer, String subject, String jti, List<String> audiences,
+                                  String algorithm, Key privateKey, long notBeforeMillis)
+            throws IdentityOAuth2Exception {
+
+        long lifetimeInMillis = 3600 * 1000;
+        long curTimeInMillis = Calendar.getInstance().getTimeInMillis();
+
+        JWTClaimsSet.Builder jwtClaimsSetBuilder = new JWTClaimsSet.Builder();
+        jwtClaimsSetBuilder.issuer(issuer);
+        jwtClaimsSetBuilder.subject(subject);
+        jwtClaimsSetBuilder.audience(audiences);
+        jwtClaimsSetBuilder.jwtID(jti);
+        jwtClaimsSetBuilder.expirationTime(new Date(curTimeInMillis + lifetimeInMillis));
+        jwtClaimsSetBuilder.issueTime(new Date(curTimeInMillis));
+
+        if (notBeforeMillis > 0) {
+            jwtClaimsSetBuilder.notBeforeTime(new Date(curTimeInMillis + notBeforeMillis));
+        }
+        JWTClaimsSet jwtClaimsSet = jwtClaimsSetBuilder.build();
+        if (JWSAlgorithm.NONE.getName().equals(algorithm)) {
+            return new PlainJWT(jwtClaimsSet).serialize();
+        } else if (JWSAlgorithm.RS512.getName().equals(algorithm)) {
+            return signJWTWithRSA512(jwtClaimsSet, privateKey);
+        }
+
+        return signJWTWithRSA(jwtClaimsSet, privateKey);
+    }
+
     public static String buildJWT(String issuer, String subject, String jti, String audience, String algorythm,
                                   Key privateKey, long notBeforeMillis, long lifetimeInMillis, long issuedTime)
             throws IdentityOAuth2Exception {
