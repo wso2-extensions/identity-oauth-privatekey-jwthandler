@@ -18,12 +18,14 @@
 
 package org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt;
 
+import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.testng.Assert;
 import org.testng.annotations.BeforeClass;
 import org.testng.annotations.Test;
 import org.wso2.carbon.base.CarbonBaseConstants;
 import org.wso2.carbon.context.PrivilegedCarbonContext;
+import org.wso2.carbon.identity.application.authentication.framework.model.AuthenticatedUser;
 import org.wso2.carbon.identity.base.IdentityConstants;
 import org.wso2.carbon.identity.common.testng.WithAxisConfiguration;
 import org.wso2.carbon.identity.common.testng.WithCarbonHome;
@@ -32,6 +34,7 @@ import org.wso2.carbon.identity.common.testng.WithKeyStore;
 import org.wso2.carbon.identity.common.testng.WithRealmService;
 import org.wso2.carbon.identity.core.util.IdentityTenantUtil;
 import org.wso2.carbon.identity.core.util.IdentityUtil;
+import org.wso2.carbon.identity.oauth.dao.OAuthAppDO;
 import org.wso2.carbon.identity.oauth2.IdentityOAuth2Exception;
 import org.wso2.carbon.identity.oauth2.bean.OAuthClientAuthnContext;
 import org.wso2.carbon.identity.oauth2.client.authentication.OAuthClientAuthnException;
@@ -40,6 +43,7 @@ import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.core.dao.JWT
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.core.model.JWTClientAuthenticatorConfig;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.internal.JWTServiceComponent;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.internal.JWTServiceDataHolder;
+import org.wso2.carbon.identity.oauth2.util.OAuth2Util;
 import org.wso2.carbon.idp.mgt.internal.IdpMgtServiceComponentHolder;
 import org.wso2.carbon.user.api.UserRealm;
 import org.wso2.carbon.user.core.service.RealmService;
@@ -151,14 +155,25 @@ public class PrivateKeyJWTClientAuthenticatorTest {
         Mockito.when(httpServletRequest.getRequestURL())
                 .thenReturn(new StringBuffer("http://localhost:9443/oauth2/token"));
 
-        try {
-            privateKeyJWTClientAuthenticator.authenticateClient(httpServletRequest, bodyContent,
-                    oAuthClientAuthnContext);
-            assertEquals(Constants.AUTHENTICATOR_TYPE_PK_JWT, oAuthClientAuthnContext.getParameter(
-                    Constants.AUTHENTICATOR_TYPE_PARAM));
-        } catch (OAuthClientAuthnException e) {
-            assertEquals(Constants.AUTHENTICATOR_TYPE_PK_JWT, oAuthClientAuthnContext.getParameter(
-                    Constants.AUTHENTICATOR_TYPE_PARAM));
+        OAuthAppDO mockAppDO = new OAuthAppDO();
+        mockAppDO.setOauthConsumerKey(TEST_CLIENT_ID_1);
+        AuthenticatedUser appOwner = new AuthenticatedUser();
+        appOwner.setTenantDomain(SUPER_TENANT_DOMAIN_NAME);
+        mockAppDO.setAppOwner(appOwner);
+
+        try (MockedStatic<OAuth2Util> mockedOAuth2Util = Mockito.mockStatic(OAuth2Util.class,
+                Mockito.CALLS_REAL_METHODS)) {
+            mockedOAuth2Util.when(() -> OAuth2Util.getAppInformationByClientId(Mockito.anyString()))
+                    .thenReturn(mockAppDO);
+            try {
+                privateKeyJWTClientAuthenticator.authenticateClient(httpServletRequest, bodyContent,
+                        oAuthClientAuthnContext);
+                assertEquals(Constants.AUTHENTICATOR_TYPE_PK_JWT, oAuthClientAuthnContext.getParameter(
+                        Constants.AUTHENTICATOR_TYPE_PARAM));
+            } catch (OAuthClientAuthnException e) {
+                assertEquals(Constants.AUTHENTICATOR_TYPE_PK_JWT, oAuthClientAuthnContext.getParameter(
+                        Constants.AUTHENTICATOR_TYPE_PARAM));
+            }
         }
     }
 
