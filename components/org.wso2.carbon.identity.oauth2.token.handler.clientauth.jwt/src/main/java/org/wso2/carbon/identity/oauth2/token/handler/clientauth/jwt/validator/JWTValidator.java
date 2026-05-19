@@ -38,6 +38,7 @@ import org.wso2.carbon.identity.core.ServiceURLBuilder;
 import org.wso2.carbon.identity.core.URLBuilderException;
 import org.wso2.carbon.identity.core.util.IdentityTenantUtil;
 import org.wso2.carbon.identity.core.util.IdentityUtil;
+import org.wso2.carbon.identity.discovery.DiscoveryUtil;
 import org.wso2.carbon.identity.oauth.common.OAuth2ErrorCodes;
 import org.wso2.carbon.identity.oauth.common.exception.InvalidOAuthClientException;
 import org.wso2.carbon.identity.oauth.config.OAuthServerConfiguration;
@@ -170,7 +171,7 @@ public class JWTValidator {
             List<String> acceptedAudienceList;
             try {
                 if (FapiUtil.isFapiConformantApp(consumerKey, FapiProfileEnum.FAPI2_SECURITY)) {
-                    acceptedAudienceList = Collections.singletonList(IdentityUtil.getProperty(PROP_ID_TOKEN_ISSUER_ID));
+                    acceptedAudienceList = Collections.singletonList(this.getIdTokenIssuer(tenantDomain));
                 } else {
                 /* A list of valid audiences (issuer identifier, token endpoint URL or pushed authorization request
                 endpoint URL) should be supported for PAR and not just a single valid audience.
@@ -213,9 +214,6 @@ public class JWTValidator {
             } catch (InvalidOAuthClientException e) {
                 throw new OAuthClientAuthnException("Could not find an existing app for clientId: " + consumerKey,
                         OAuth2ErrorCodes.INVALID_CLIENT);
-            } catch (IdentityOAuth2Exception e) {
-                throw new OAuthClientAuthnException("Error while obtaining the service provider for client_id: " +
-                        consumerKey, OAuth2ErrorCodes.SERVER_ERROR);
             }
 
             if (oAuthAppDO.isTokenEndpointAllowReusePvtKeyJwt() != null) {
@@ -623,8 +621,13 @@ public class JWTValidator {
          * As per the specification, when the incoming request is a PAR request, the server's issuer identifier
          * is added to the list of acceptable audience values.
          */
-        if (StringUtils.equals(requestUrl, parEndpoint)) {
-            validAudiences.add(IdentityUtil.getProperty(PROP_ID_TOKEN_ISSUER_ID));
+        try {
+            if (StringUtils.equals(requestUrl, parEndpoint)) {
+                validAudiences.add(this.getIdTokenIssuer(tenantDomain));
+            }
+        } catch (InvalidOAuthClientException e) {
+            throw new OAuthClientAuthnException("Error while loading the issuer URL for tenant: " + tenantDomain,
+                    OAuth2ErrorCodes.INVALID_REQUEST);
         }
 
         if (StringUtils.isNotEmpty(validAudience)) {
@@ -881,4 +884,17 @@ public class JWTValidator {
         return configuredSigningAlgorithms;
     }
 
+    private String getIdTokenIssuer(final String tenantDomain) throws InvalidOAuthClientException {
+
+        if (DiscoveryUtil.isUseEntityIdAsIssuerInOidcDiscovery()) {
+            try {
+                return OAuth2Util.getIdTokenIssuer(tenantDomain);
+            } catch (IdentityOAuth2Exception e) {
+                throw new InvalidOAuthClientException(String.format("Error while retrieving OIDC Id token issuer " +
+                        "value for tenant domain: %s", tenantDomain), e);
+            }
+        } else {
+            return OAuth2Util.getIDTokenIssuer();
+        }
+    }
 }
