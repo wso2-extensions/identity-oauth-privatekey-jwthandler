@@ -342,8 +342,9 @@ public class JWTValidator {
         try {
             if (FapiUtil.isFapiConformantApp(consumerKey, FapiProfileEnum.FAPI2_SECURITY)) {
                 if (audience.size() > 1) {
-                    log.debug("Multiple audience values in client assertion are not allowed for " +
-                            "FAPI 2.0 applications.");
+                    if (log.isDebugEnabled()) {
+                        log.debug("Invalid FAPI 2.0 client assertion: multiple audiences. clientID: " + consumerKey);
+                    }
                     throw new OAuthClientAuthnException("Client assertion contains multiple audience values.",
                             OAuth2ErrorCodes.INVALID_REQUEST);
                 }
