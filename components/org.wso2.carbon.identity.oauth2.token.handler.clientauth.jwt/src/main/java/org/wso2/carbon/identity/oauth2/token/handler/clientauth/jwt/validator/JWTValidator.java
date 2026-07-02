@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2024-2025, WSO2 LLC. (http://www.wso2.com).
+ * Copyright (c) 2024-2026, WSO2 LLC. (http://www.wso2.com).
  *
  * WSO2 LLC. licenses this file to you under the Apache License,
  * Version 2.0 (the "License"); you may not use this file except
@@ -38,12 +38,15 @@ import org.wso2.carbon.identity.core.ServiceURLBuilder;
 import org.wso2.carbon.identity.core.URLBuilderException;
 import org.wso2.carbon.identity.core.util.IdentityTenantUtil;
 import org.wso2.carbon.identity.core.util.IdentityUtil;
+import org.wso2.carbon.identity.discovery.DiscoveryUtil;
 import org.wso2.carbon.identity.oauth.common.OAuth2ErrorCodes;
 import org.wso2.carbon.identity.oauth.common.exception.InvalidOAuthClientException;
 import org.wso2.carbon.identity.oauth.config.OAuthServerConfiguration;
 import org.wso2.carbon.identity.oauth.dao.OAuthAppDO;
 import org.wso2.carbon.identity.oauth2.IdentityOAuth2Exception;
 import org.wso2.carbon.identity.oauth2.client.authentication.OAuthClientAuthnException;
+import org.wso2.carbon.identity.oauth2.fapi.models.FapiProfileEnum;
+import org.wso2.carbon.identity.oauth2.fapi.utils.FapiUtil;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.Constants;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.cache.JWTCache;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.cache.JWTCacheEntry;
@@ -67,6 +70,7 @@ import java.security.interfaces.RSAPublicKey;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -89,6 +93,7 @@ public class JWTValidator {
     public static final String PS = "PS";
     public static final String ES = "ES";
     private static final String IDP_ENTITY_ID = "IdPEntityId";
+    private static final String PROP_TOKEN_EP = "OAuth2TokenEPUrl";
     private static final String PROP_ID_TOKEN_ISSUER_ID = "OAuth.OpenIDConnect.IDTokenIssuerID";
     private static final String FAPI_SIGNATURE_ALG_CONFIGURATION = "OAuth.OpenIDConnect.FAPI." +
             "AllowedSignatureAlgorithms.AllowedSignatureAlgorithm";
@@ -163,10 +168,20 @@ public class JWTValidator {
                 return false;
             }
 
-            /* A list of valid audiences (issuer identifier, token endpoint URL or pushed authorization request
-            endpoint URL) should be supported for PAR and not just a single valid audience.
-            https://datatracker.ietf.org/doc/html/rfc9126 */
-            List<String> acceptedAudienceList = getValidAudiences(tenantDomain, requestUrl);
+            List<String> acceptedAudienceList;
+            try {
+                if (FapiUtil.isFapiConformantApp(consumerKey, FapiProfileEnum.FAPI2_SECURITY)) {
+                    acceptedAudienceList = Collections.singletonList(this.getIdTokenIssuer(tenantDomain));
+                } else {
+                /* A list of valid audiences (issuer identifier, token endpoint URL or pushed authorization request
+                endpoint URL) should be supported for PAR and not just a single valid audience.
+                https://datatracker.ietf.org/doc/html/rfc9126 */
+                    acceptedAudienceList = getValidAudiences(tenantDomain, requestUrl);
+                }
+            } catch (InvalidOAuthClientException e) {
+                throw new OAuthClientAuthnException("Error occurred while retrieving client information.",
+                        OAuth2ErrorCodes.INVALID_CLIENT);
+            }
 
             long expTime = 0;
             long issuedTime = 0;
@@ -187,7 +202,7 @@ public class JWTValidator {
             /* Check whether the request signing algorithm is an allowed algorithm as per the FAPI specification.
                https://openid.net/specs/openid-financial-api-part-2-1_0.html#algorithm-considerations */
             try {
-                if (OAuth2Util.isFapiConformantApp(consumerKey)) {
+                if (FapiUtil.isFapiConformantApp(consumerKey)) {
                     //   Mandating FAPI specified JWT signing algorithms.
                     List<String> fapiAllowedSigningAlgorithms = IdentityUtil
                             .getPropertyAsList(FAPI_SIGNATURE_ALG_CONFIGURATION);
@@ -199,9 +214,6 @@ public class JWTValidator {
             } catch (InvalidOAuthClientException e) {
                 throw new OAuthClientAuthnException("Could not find an existing app for clientId: " + consumerKey,
                         OAuth2ErrorCodes.INVALID_CLIENT);
-            } catch (IdentityOAuth2Exception e) {
-                throw new OAuthClientAuthnException("Error while obtaining the service provider for client_id: " +
-                        consumerKey, OAuth2ErrorCodes.SERVER_ERROR);
             }
 
             if (oAuthAppDO.isTokenEndpointAllowReusePvtKeyJwt() != null) {
@@ -216,7 +228,7 @@ public class JWTValidator {
             }
 
             //Validate signature validation, audience, nbf,exp time, jti.
-            if (!validateAudience(acceptedAudienceList, audience)
+            if (!validateAudienceFormat(audience, consumerKey) || !validateAudience(acceptedAudienceList, audience)
                     || !validateJWTWithExpTime(expirationTime, currentTimeInMillis, timeStampSkewMillis)
                     || !validateNotBeforeClaim(currentTimeInMillis, timeStampSkewMillis, nbf)
                     || !validateAgeOfTheToken(issuedAtTime, currentTimeInMillis, timeStampSkewMillis)
@@ -313,7 +325,35 @@ public class JWTValidator {
             log.debug("None of the audience values : " + audience + " matched the expected audiences : " +
                     expectedAudiences);
         }
-        throw new OAuthClientAuthnException("Failed to match audience values.", OAuth2ErrorCodes.INVALID_REQUEST);
+        throw new OAuthClientAuthnException("Failed to match audience values.", OAuth2ErrorCodes.INVALID_CLIENT);
+    }
+
+    /**
+     * Validate 'aud' claim format. Multiple audiences are not allowed in FAPI 2.0 compliant applications.
+     *
+     * @param audience - List of audience values in the 'aud' claim of the JWT.
+     * @param consumerKey - OAuth client id of the application.
+     * @return true if the audience format is valid.
+     *
+     * @throws OAuthClientAuthnException Throw OAuthClientAuthnException if the audience format is invalid.
+     */
+    private boolean validateAudienceFormat(List<String> audience, String consumerKey) throws OAuthClientAuthnException {
+
+        try {
+            if (FapiUtil.isFapiConformantApp(consumerKey, FapiProfileEnum.FAPI2_SECURITY)) {
+                if (audience.size() > 1) {
+                    if (log.isDebugEnabled()) {
+                        log.debug("Invalid FAPI 2.0 client assertion: multiple audiences. clientID: " + consumerKey);
+                    }
+                    throw new OAuthClientAuthnException("Client assertion contains multiple audience values.",
+                            OAuth2ErrorCodes.INVALID_REQUEST);
+                }
+            }
+        } catch (InvalidOAuthClientException | IdentityOAuth2Exception e) {
+            throw new OAuthClientAuthnException("Error occurred while retrieving client information.",
+                    OAuth2ErrorCodes.INVALID_CLIENT);
+        }
+        return true;
     }
 
     // "REQUIRED. JWT ID. A unique identifier for the token, which can be used to prevent reuse of the token.
@@ -529,12 +569,12 @@ public class JWTValidator {
             FederatedAuthenticatorConfig oidcFedAuthn = IdentityApplicationManagementUtil
                     .getFederatedAuthenticator(residentIdP.getFederatedAuthenticatorConfigs(),
                             IdentityApplicationConstants.Authenticator.OIDC.NAME);
-            Property idpEntityId = IdentityApplicationManagementUtil.getProperty(oidcFedAuthn.getProperties(),
-                    IDP_ENTITY_ID);
+            Property tokenEndpointFromResidentIdp =
+                    IdentityApplicationManagementUtil.getProperty(oidcFedAuthn.getProperties(), PROP_TOKEN_EP);
             Property parEndpointFromResidentIdp = IdentityApplicationManagementUtil.getProperty(oidcFedAuthn
                     .getProperties(), Constants.OAUTH2_PAR_URL_REF);
-            if (idpEntityId != null) {
-                tokenEndpoint = idpEntityId.getValue();
+            if (tokenEndpointFromResidentIdp != null) {
+                tokenEndpoint = tokenEndpointFromResidentIdp.getValue();
             }
             if (parEndpointFromResidentIdp != null) {
                 parEndpoint = parEndpointFromResidentIdp.getValue();
@@ -570,6 +610,25 @@ public class JWTValidator {
         }
         if (StringUtils.isEmpty(parEndpoint)) {
             parEndpoint = IdentityUtil.getProperty(Constants.OAUTH2_PAR_URL_CONFIG);
+        }
+
+        /*
+         * https://www.rfc-editor.org/rfc/rfc9126.html#section-2
+         *
+         * "In order to facilitate interoperability, the authorization server MUST accept its issuer identifier,
+         * token endpoint URL, or pushed authorization request endpoint URL as values that identify it as an
+         * intended audience."
+         *
+         * As per the specification, when the incoming request is a PAR request, the server's issuer identifier
+         * is added to the list of acceptable audience values.
+         */
+        try {
+            if (StringUtils.equals(requestUrl, parEndpoint)) {
+                validAudiences.add(this.getIdTokenIssuer(tenantDomain));
+            }
+        } catch (InvalidOAuthClientException e) {
+            throw new OAuthClientAuthnException("Error while loading the issuer URL for tenant: " + tenantDomain,
+                    OAuth2ErrorCodes.INVALID_REQUEST);
         }
 
         if (StringUtils.isNotEmpty(validAudience)) {
@@ -826,4 +885,17 @@ public class JWTValidator {
         return configuredSigningAlgorithms;
     }
 
+    private String getIdTokenIssuer(final String tenantDomain) throws InvalidOAuthClientException {
+
+        if (DiscoveryUtil.isUseEntityIdAsIssuerInOidcDiscovery()) {
+            try {
+                return OAuth2Util.getIdTokenIssuer(tenantDomain);
+            } catch (IdentityOAuth2Exception e) {
+                throw new InvalidOAuthClientException(String.format("Error while retrieving OIDC Id token issuer " +
+                        "value for tenant domain: %s", tenantDomain), e);
+            }
+        } else {
+            return OAuth2Util.getIDTokenIssuer();
+        }
+    }
 }
