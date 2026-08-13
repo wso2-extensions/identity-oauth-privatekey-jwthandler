@@ -22,10 +22,18 @@ import org.mockito.MockedStatic;
 import org.mockito.Mockito;
 import org.testng.Assert;
 import org.testng.annotations.BeforeClass;
+import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 import org.wso2.carbon.base.CarbonBaseConstants;
 import org.wso2.carbon.context.PrivilegedCarbonContext;
 import org.wso2.carbon.identity.application.authentication.framework.model.AuthenticatedUser;
+import org.wso2.carbon.identity.application.common.model.FederatedAuthenticatorConfig;
+import org.wso2.carbon.identity.application.common.model.IdentityProvider;
+import org.wso2.carbon.identity.application.common.model.Property;
+import org.wso2.carbon.identity.application.common.model.ServiceProvider;
+import org.wso2.carbon.identity.application.common.model.ServiceProviderProperty;
+import org.wso2.carbon.identity.application.common.util.IdentityApplicationConstants;
+import org.wso2.carbon.identity.application.mgt.ApplicationManagementService;
 import org.wso2.carbon.identity.base.IdentityConstants;
 import org.wso2.carbon.identity.common.testng.WithAxisConfiguration;
 import org.wso2.carbon.identity.common.testng.WithCarbonHome;
@@ -38,12 +46,14 @@ import org.wso2.carbon.identity.oauth.dao.OAuthAppDO;
 import org.wso2.carbon.identity.oauth2.IdentityOAuth2Exception;
 import org.wso2.carbon.identity.oauth2.bean.OAuthClientAuthnContext;
 import org.wso2.carbon.identity.oauth2.client.authentication.OAuthClientAuthnException;
+import org.wso2.carbon.identity.oauth2.internal.OAuth2ServiceComponentHolder;
 import org.wso2.carbon.identity.oauth2.model.ClientAuthenticationMethodModel;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.core.dao.JWTAuthenticationConfigurationDAO;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.core.model.JWTClientAuthenticatorConfig;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.internal.JWTServiceComponent;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.internal.JWTServiceDataHolder;
 import org.wso2.carbon.identity.oauth2.util.OAuth2Util;
+import org.wso2.carbon.idp.mgt.IdentityProviderManager;
 import org.wso2.carbon.idp.mgt.internal.IdpMgtServiceComponentHolder;
 import org.wso2.carbon.user.api.UserRealm;
 import org.wso2.carbon.user.core.service.RealmService;
@@ -74,6 +84,10 @@ import static org.wso2.carbon.utils.multitenancy.MultitenantConstants.SUPER_TENA
         injectToSingletons = {JWTServiceComponent.class})
 @WithKeyStore
 public class PrivateKeyJWTClientAuthenticatorTest {
+
+    private static final String INVALID_SIGNATURE_ALGORITHM_ERROR =
+            "Signature algorithm used in the request is invalid.";
+    private static final String PROP_TOKEN_EP = "OAuth2TokenEPUrl";
 
     PrivateKeyJWTClientAuthenticator privateKeyJWTClientAuthenticator;
     HttpServletRequest httpServletRequest = Mockito.mock(HttpServletRequest.class);
@@ -173,6 +187,103 @@ public class PrivateKeyJWTClientAuthenticatorTest {
             } catch (OAuthClientAuthnException e) {
                 assertEquals(Constants.AUTHENTICATOR_TYPE_PK_JWT, oAuthClientAuthnContext.getParameter(
                         Constants.AUTHENTICATOR_TYPE_PARAM));
+            }
+        }
+    }
+
+    @DataProvider(name = "provideConfiguredSignatureAlgorithm")
+    public Object[][] provideConfiguredSignatureAlgorithm() {
+
+        return new Object[][]{
+                //   The Java signature algorithm name of RS256, as offered by the Console.
+                {"SHA256withRSA", "3040"},
+                //   The JWS algorithm name of the same algorithm.
+                {"RS256", "3041"},
+        };
+    }
+
+    /**
+     * A client assertion signed with RS256 must not be rejected for an invalid signature algorithm when the
+     * application is configured with an algorithm that is equivalent to RS256, regardless of whether it is stored
+     * using the Java signature algorithm name or the JWS algorithm name.
+     */
+    @Test(dataProvider = "provideConfiguredSignatureAlgorithm")
+    public void testAssertionIsNotRejectedForEquivalentSignatureAlgorithm(String configuredSignatureAlgorithm,
+                                                                          String jti) throws Exception {
+
+        Map<String, List> bodyContent = new HashMap<>();
+        List<String> assertionType = new ArrayList<>();
+        assertionType.add(OAUTH_JWT_BEARER_GRANT_TYPE);
+        List<String> assertion = new ArrayList<>();
+        //   buildJWT signs with RS256 unless RS512 or none is requested.
+        assertion.add(buildJWT(TEST_CLIENT_ID_1, TEST_CLIENT_ID_1, jti, audience, "RS256", key1, 0));
+        bodyContent.put(OAUTH_JWT_ASSERTION, assertion);
+        bodyContent.put(OAUTH_JWT_ASSERTION_TYPE, assertionType);
+
+        RealmService realmService = IdentityTenantUtil.getRealmService();
+        UserRealm userRealm = realmService.getTenantUserRealm(SUPER_TENANT_ID);
+        PrivilegedCarbonContext.getThreadLocalCarbonContext().setUserRealm(userRealm);
+        JWTServiceDataHolder.getInstance().setRealmService(realmService);
+        IdpMgtServiceComponentHolder.getInstance().setRealmService(realmService);
+
+        JWTClientAuthenticatorConfig jwtClientAuthenticatorConfig = new JWTClientAuthenticatorConfig();
+        jwtClientAuthenticatorConfig.setEnableTokenReuse(true);
+        JWTAuthenticationConfigurationDAO mockDAO = Mockito.mock(JWTAuthenticationConfigurationDAO.class);
+        Mockito.when(mockDAO.getPrivateKeyJWTClientAuthenticationConfigurationByTenantDomain(Mockito.anyString()))
+                .thenReturn(jwtClientAuthenticatorConfig);
+        JWTServiceDataHolder.getInstance().setJwtAuthenticationConfigurationDAO(mockDAO);
+        Mockito.when(httpServletRequest.getRequestURL())
+                .thenReturn(new StringBuffer("http://localhost:9443/oauth2/token"));
+
+        OAuthAppDO mockAppDO = new OAuthAppDO();
+        mockAppDO.setOauthConsumerKey(TEST_CLIENT_ID_1);
+        mockAppDO.setTokenEndpointAuthSignatureAlgorithm(configuredSignatureAlgorithm);
+        AuthenticatedUser appOwner = new AuthenticatedUser();
+        appOwner.setTenantDomain(SUPER_TENANT_DOMAIN_NAME);
+        mockAppDO.setAppOwner(appOwner);
+
+        /* The audience of the assertion is validated against the token endpoint of the resident IdP before the
+           signature algorithm is validated, so the resident IdP has to resolve for the check to be reached. */
+        Property tokenEndpoint = new Property();
+        tokenEndpoint.setName(PROP_TOKEN_EP);
+        tokenEndpoint.setValue(audience);
+        FederatedAuthenticatorConfig oidcConfig = new FederatedAuthenticatorConfig();
+        oidcConfig.setName(IdentityApplicationConstants.Authenticator.OIDC.NAME);
+        oidcConfig.setProperties(new Property[]{tokenEndpoint});
+        IdentityProvider residentIdp = new IdentityProvider();
+        residentIdp.setFederatedAuthenticatorConfigs(new FederatedAuthenticatorConfig[]{oidcConfig});
+        IdentityProviderManager mockIdpManager = Mockito.mock(IdentityProviderManager.class);
+        Mockito.when(mockIdpManager.getResidentIdP(Mockito.anyString())).thenReturn(residentIdp);
+
+        /* The signature is verified after the algorithm check. No certificate is configured on the service provider
+           here, so verification falls back to the tenant keystore. */
+        ServiceProvider serviceProvider = Mockito.mock(ServiceProvider.class);
+        Mockito.when(serviceProvider.getCertificateContent()).thenReturn(null);
+        Mockito.when(serviceProvider.getSpProperties()).thenReturn(new ServiceProviderProperty[0]);
+        ApplicationManagementService applicationMgtService = Mockito.mock(ApplicationManagementService.class);
+        Mockito.when(applicationMgtService.getServiceProviderByClientId(Mockito.anyString(), Mockito.anyString(),
+                Mockito.anyString())).thenReturn(serviceProvider);
+        OAuth2ServiceComponentHolder.setApplicationMgtService(applicationMgtService);
+
+        try (MockedStatic<OAuth2Util> mockedOAuth2Util = Mockito.mockStatic(OAuth2Util.class,
+                     Mockito.CALLS_REAL_METHODS);
+             MockedStatic<IdentityProviderManager> mockedIdpManagerStatic =
+                     Mockito.mockStatic(IdentityProviderManager.class)) {
+            mockedOAuth2Util.when(() -> OAuth2Util.getAppInformationByClientId(Mockito.anyString()))
+                    .thenReturn(mockAppDO);
+            mockedOAuth2Util.when(() -> OAuth2Util.getAppInformationByClientId(Mockito.anyString(),
+                    Mockito.anyString())).thenReturn(mockAppDO);
+            mockedIdpManagerStatic.when(IdentityProviderManager::getInstance).thenReturn(mockIdpManager);
+            try {
+                //   A dedicated context per invocation, since authenticateClient cannot overwrite an existing key.
+                privateKeyJWTClientAuthenticator.authenticateClient(httpServletRequest, bodyContent,
+                        new OAuthClientAuthnContext());
+            } catch (OAuthClientAuthnException e) {
+                /* Validation can still fail for later reasons in this test setup, such as the signature itself not
+                   being verifiable, but it must never fail because the signature algorithm was considered invalid. */
+                Assert.assertNotEquals(e.getMessage(), INVALID_SIGNATURE_ALGORITHM_ERROR,
+                        "A client assertion signed with RS256 was rejected while the application was configured "
+                                + "with the equivalent algorithm: " + configuredSignatureAlgorithm);
             }
         }
     }
