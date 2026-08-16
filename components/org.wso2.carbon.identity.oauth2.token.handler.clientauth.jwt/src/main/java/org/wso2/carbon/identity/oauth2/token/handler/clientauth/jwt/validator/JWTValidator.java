@@ -28,6 +28,7 @@ import com.nimbusds.jwt.SignedJWT;
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
+import org.wso2.carbon.context.PrivilegedCarbonContext;
 import org.wso2.carbon.identity.application.common.model.FederatedAuthenticatorConfig;
 import org.wso2.carbon.identity.application.common.model.IdentityProvider;
 import org.wso2.carbon.identity.application.common.model.Property;
@@ -442,8 +443,19 @@ public class JWTValidator {
         OAuthAppDO oAuthAppDO = null;
         String message = String.format("Error while retrieving OAuth application with provided JWT information with " +
                 "subject '%s' ", jwtSubject);
+
+        String accessingOrgId = PrivilegedCarbonContext.getThreadLocalCarbonContext()
+                .getApplicationResidentOrganizationId();
         try {
-            oAuthAppDO = OAuth2Util.getAppInformationByClientId(jwtSubject);
+            if (StringUtils.isNotEmpty(accessingOrgId)) {
+                /*
+                 Organization qualified request. The login tenant is the parent organization, not the one the
+                 application resides in, so the application has to be resolved within the organization hierarchy.
+                */
+                oAuthAppDO = OAuth2Util.getAppInformationFromOrgHierarchy(jwtSubject, accessingOrgId);
+            } else {
+                oAuthAppDO = OAuth2Util.getAppInformationByClientId(jwtSubject);
+            }
             if (oAuthAppDO == null) {
                 logAndThrowException(message);
             }
@@ -636,6 +648,21 @@ public class JWTValidator {
         }
         validAudiences.add(tokenEndpoint);
         validAudiences.add(parEndpoint);
+
+        String appResidentOrgId = PrivilegedCarbonContext.getThreadLocalCarbonContext()
+                .getApplicationResidentOrganizationId();
+        if (!StringUtils.isBlank(appResidentOrgId)) {
+            try {
+                // Format of https://<host>/t/<root-tenant-domain>/o/<accessing-org-id>/oauth2/token
+                tokenEndpoint = ServiceURLBuilder.create().addPath(OAUTH2_TOKEN_EP_URL).build().getAbsolutePublicURL();
+                validAudiences.add(tokenEndpoint);
+                parEndpoint = ServiceURLBuilder.create().addPath(OAUTH2_PAR_EP_URL).build().getAbsolutePublicURL();
+                validAudiences.add(parEndpoint);
+            } catch (URLBuilderException e) {
+                throw new OAuthClientAuthnException(e.getMessage(), OAuth2ErrorCodes.INVALID_REQUEST, e);
+            }
+        }
+
         return validAudiences;
     }
 
@@ -872,8 +899,19 @@ public class JWTValidator {
 
         List<String> configuredSigningAlgorithms = new ArrayList<>();
         String tenantDomain = IdentityTenantUtil.resolveTenantDomain();
+        String accessingOrgId = PrivilegedCarbonContext.getThreadLocalCarbonContext()
+                .getApplicationResidentOrganizationId();
         try {
-            OAuthAppDO oAuthAppDO = OAuth2Util.getAppInformationByClientId(clientId, tenantDomain);
+            OAuthAppDO oAuthAppDO;
+            if (StringUtils.isNotEmpty(accessingOrgId)) {
+                /*
+                 Organization qualified request. The resolved tenant domain is the parent organization, not the
+                 one the application resides in, so resolve within the organization hierarchy.
+                */
+                oAuthAppDO = OAuth2Util.getAppInformationFromOrgHierarchy(clientId, accessingOrgId);
+            } else {
+                oAuthAppDO = OAuth2Util.getAppInformationByClientId(clientId, tenantDomain);
+            }
             String tokenEndpointAuthSignatureAlgorithm = oAuthAppDO.getTokenEndpointAuthSignatureAlgorithm();
             if (StringUtils.isNotBlank(tokenEndpointAuthSignatureAlgorithm)) {
                 configuredSigningAlgorithms = Arrays.asList(tokenEndpointAuthSignatureAlgorithm);

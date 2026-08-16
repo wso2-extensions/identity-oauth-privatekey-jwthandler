@@ -38,6 +38,7 @@ import org.wso2.carbon.identity.common.testng.WithKeyStore;
 import org.wso2.carbon.identity.common.testng.WithRealmService;
 import org.wso2.carbon.identity.core.util.IdentityTenantUtil;
 import org.wso2.carbon.identity.core.util.IdentityUtil;
+import org.wso2.carbon.identity.oauth.dao.OAuthAppDO;
 import org.wso2.carbon.identity.oauth2.client.authentication.OAuthClientAuthnException;
 import org.wso2.carbon.identity.oauth2.fapi.models.FapiProfileEnum;
 import org.wso2.carbon.identity.oauth2.fapi.utils.FapiUtil;
@@ -45,6 +46,7 @@ import org.wso2.carbon.identity.oauth2.internal.OAuth2ServiceComponentHolder;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.Constants;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.internal.JWTServiceComponent;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.internal.JWTServiceDataHolder;
+import org.wso2.carbon.identity.oauth2.util.OAuth2Util;
 import org.wso2.carbon.identity.testutil.ReadCertStoreSampleUtil;
 import org.wso2.carbon.idp.mgt.IdentityProviderManager;
 import org.wso2.carbon.idp.mgt.internal.IdpMgtServiceComponentHolder;
@@ -52,6 +54,8 @@ import org.wso2.carbon.user.api.UserRealm;
 import org.wso2.carbon.user.core.service.RealmService;
 
 import java.io.ByteArrayInputStream;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.security.Key;
 import java.security.KeyStore;
 import java.security.cert.Certificate;
@@ -59,16 +63,20 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.util.Arrays;
 import java.util.Calendar;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mockStatic;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 import static org.testng.Assert.assertEquals;
 import static org.testng.Assert.assertFalse;
+import static org.testng.Assert.assertSame;
 import static org.testng.Assert.assertTrue;
 import static org.testng.Assert.fail;
 import static org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.Constants.REJECT_BEFORE_IN_MINUTES;
@@ -91,6 +99,8 @@ public class JWTValidatorTest {
     public static final String TEST_FAPI_CLIENT_ID_1 = "KrVLov4Bl3natUksF2HmWsdw684b";
     public static final String TEST_FAPI_CLIENT_ID_2 = "KrVLov4Bl3natUksF2HmWsdw684c";
     public static final String TEST_SECRET_1 = "testSecret1";
+    public static final String TEST_ORG_ID = "4dcedae8-5e1a-4812-abd0-4b034d40ad75";
+    public static final String RS256 = "RS256";
     public static final String VALID_ISSUER_VAL = "valid-issuer";
     public static final String VALID_ISSUER = "ValidIssuer";
     public static final String VALID_AUDIENCE = "ValidAudience";
@@ -389,6 +399,121 @@ public class JWTValidatorTest {
                 "JWTG92NEJsM25hdFVrc0YySG1Xc2R3Njg0YSIsImp0aSI6MTAwOCwiZXhwIjoiMjU1NDQ0MDEzMjAwMCIsImF1ZCI6Wy" +
                 "Jzb21lLWF1ZGllbmNlIl19.m0RrVUrZHr1M7R4I_4dzpoWD8jNA2fKkOadEsFg9Wj4";
         SignedJWT signedJWT = SignedJWT.parse(hsSignedJWT);
+    }
+
+    /**
+     * On an organization qualified token request (/t/{tenant}/o/{orgId}/oauth2/token) the login tenant is the
+     * parent organization, so the application must be resolved through the organization hierarchy. Resolving it
+     * against the login tenant misses the application and surfaces as
+     * "Error while retrieving OAuth application with provided JWT information".
+     */
+    @Test
+    public void testGetOAuthAppDOResolvesThroughOrgHierarchyForOrgQualifiedRequest() throws Exception {
+
+        JWTValidator jwtValidator = getJWTValidator(new Properties());
+        OAuthAppDO expectedApp = new OAuthAppDO();
+        String previousOrgId = PrivilegedCarbonContext.getThreadLocalCarbonContext()
+                .getApplicationResidentOrganizationId();
+        try (MockedStatic<OAuth2Util> mockedOAuth2Util = mockStatic(OAuth2Util.class)) {
+            mockedOAuth2Util.when(() -> OAuth2Util.getAppInformationFromOrgHierarchy(TEST_CLIENT_ID_1, TEST_ORG_ID))
+                    .thenReturn(expectedApp);
+            PrivilegedCarbonContext.getThreadLocalCarbonContext().setApplicationResidentOrganizationId(TEST_ORG_ID);
+
+            assertSame(invokeGetOAuthAppDO(jwtValidator, TEST_CLIENT_ID_1), expectedApp,
+                    "Application should be resolved through the organization hierarchy.");
+            mockedOAuth2Util.verify(
+                    () -> OAuth2Util.getAppInformationFromOrgHierarchy(TEST_CLIENT_ID_1, TEST_ORG_ID));
+            // The login-tenant lookup must not be used for an organization qualified request.
+            mockedOAuth2Util.verify(() -> OAuth2Util.getAppInformationByClientId(TEST_CLIENT_ID_1), never());
+        } finally {
+            PrivilegedCarbonContext.getThreadLocalCarbonContext()
+                    .setApplicationResidentOrganizationId(previousOrgId);
+        }
+    }
+
+    /**
+     * Tenant qualified requests carry no application resident organization, and must keep resolving by tenant.
+     */
+    @Test
+    public void testGetOAuthAppDOResolvesByTenantWhenNotOrgQualified() throws Exception {
+
+        JWTValidator jwtValidator = getJWTValidator(new Properties());
+        OAuthAppDO expectedApp = new OAuthAppDO();
+        String previousOrgId = PrivilegedCarbonContext.getThreadLocalCarbonContext()
+                .getApplicationResidentOrganizationId();
+        try (MockedStatic<OAuth2Util> mockedOAuth2Util = mockStatic(OAuth2Util.class)) {
+            PrivilegedCarbonContext.getThreadLocalCarbonContext().setApplicationResidentOrganizationId(null);
+            mockedOAuth2Util.when(() -> OAuth2Util.getAppInformationByClientId(TEST_CLIENT_ID_1))
+                    .thenReturn(expectedApp);
+
+            assertSame(invokeGetOAuthAppDO(jwtValidator, TEST_CLIENT_ID_1), expectedApp,
+                    "Application resolution must be unchanged when the request is not organization qualified.");
+            mockedOAuth2Util.verify(() -> OAuth2Util.getAppInformationFromOrgHierarchy(anyString(), anyString()),
+                    never());
+        } finally {
+            PrivilegedCarbonContext.getThreadLocalCarbonContext()
+                    .setApplicationResidentOrganizationId(previousOrgId);
+        }
+    }
+
+    /**
+     * The signing algorithm lookup resolves the application as well, and must use the organization hierarchy on an
+     * organization qualified request for the same reason.
+     */
+    @Test
+    public void testGetConfiguredSigningAlgorithmResolvesThroughOrgHierarchy() throws Exception {
+
+        JWTValidator jwtValidator = getJWTValidator(new Properties());
+        OAuthAppDO expectedApp = new OAuthAppDO();
+        expectedApp.setTokenEndpointAuthSignatureAlgorithm(RS256);
+        String previousOrgId = PrivilegedCarbonContext.getThreadLocalCarbonContext()
+                .getApplicationResidentOrganizationId();
+        try (MockedStatic<OAuth2Util> mockedOAuth2Util = mockStatic(OAuth2Util.class)) {
+            mockedOAuth2Util.when(() -> OAuth2Util.getAppInformationFromOrgHierarchy(TEST_CLIENT_ID_1, TEST_ORG_ID))
+                    .thenReturn(expectedApp);
+            PrivilegedCarbonContext.getThreadLocalCarbonContext().setApplicationResidentOrganizationId(TEST_ORG_ID);
+
+            assertEquals(invokeGetConfiguredSigningAlgorithm(jwtValidator, TEST_CLIENT_ID_1),
+                    Collections.singletonList(RS256),
+                    "Signing algorithm should be read from the application resolved via the organization hierarchy.");
+            mockedOAuth2Util.verify(
+                    () -> OAuth2Util.getAppInformationFromOrgHierarchy(TEST_CLIENT_ID_1, TEST_ORG_ID));
+            mockedOAuth2Util.verify(
+                    () -> OAuth2Util.getAppInformationByClientId(anyString(), anyString()), never());
+        } finally {
+            PrivilegedCarbonContext.getThreadLocalCarbonContext()
+                    .setApplicationResidentOrganizationId(previousOrgId);
+        }
+    }
+
+    private OAuthAppDO invokeGetOAuthAppDO(JWTValidator jwtValidator, String clientId) throws Exception {
+
+        return (OAuthAppDO) invokePrivate(jwtValidator, "getOAuthAppDO", clientId);
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<String> invokeGetConfiguredSigningAlgorithm(JWTValidator jwtValidator, String clientId)
+            throws Exception {
+
+        return (List<String>) invokePrivate(jwtValidator, "getConfiguredSigningAlgorithm", clientId);
+    }
+
+    private Object invokePrivate(JWTValidator jwtValidator, String methodName, String clientId) throws Exception {
+
+        Method method = JWTValidator.class.getDeclaredMethod(methodName, String.class);
+        method.setAccessible(true);
+        try {
+            return method.invoke(jwtValidator, clientId);
+        } catch (InvocationTargetException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof Error) {
+                throw (Error) cause;
+            }
+            if (cause instanceof Exception) {
+                throw (Exception) cause;
+            }
+            throw e;
+        }
     }
 
         private void mockApplicationManagementService() throws Exception {
