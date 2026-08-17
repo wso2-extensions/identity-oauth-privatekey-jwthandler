@@ -445,7 +445,7 @@ public class JWTValidator {
                 "subject '%s' ", jwtSubject);
 
         String accessingOrgId = PrivilegedCarbonContext.getThreadLocalCarbonContext()
-                .getApplicationResidentOrganizationId();
+                .getAccessingOrganizationId();
         try {
             if (StringUtils.isNotEmpty(accessingOrgId)) {
                 /*
@@ -649,9 +649,9 @@ public class JWTValidator {
         validAudiences.add(tokenEndpoint);
         validAudiences.add(parEndpoint);
 
-        String appResidentOrgId = PrivilegedCarbonContext.getThreadLocalCarbonContext()
-                .getApplicationResidentOrganizationId();
-        if (!StringUtils.isBlank(appResidentOrgId)) {
+        String accessingOrgId = PrivilegedCarbonContext.getThreadLocalCarbonContext()
+                .getAccessingOrganizationId();
+        if (!StringUtils.isBlank(accessingOrgId)) {
             try {
                 // Format of https://<host>/t/<root-tenant-domain>/o/<accessing-org-id>/oauth2/token
                 tokenEndpoint = ServiceURLBuilder.create().addPath(OAUTH2_TOKEN_EP_URL).build().getAbsolutePublicURL();
@@ -900,7 +900,7 @@ public class JWTValidator {
         List<String> configuredSigningAlgorithms = new ArrayList<>();
         String tenantDomain = IdentityTenantUtil.resolveTenantDomain();
         String accessingOrgId = PrivilegedCarbonContext.getThreadLocalCarbonContext()
-                .getApplicationResidentOrganizationId();
+                .getAccessingOrganizationId();
         try {
             OAuthAppDO oAuthAppDO;
             if (StringUtils.isNotEmpty(accessingOrgId)) {

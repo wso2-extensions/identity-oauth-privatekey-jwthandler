@@ -147,7 +147,7 @@ public class JWTValidatorTest {
                     "W/bQM+jWUllR4Qpwx6R1mVy3pFRl0+4npUr17XOGEoP9Xm/5kMvsiNOTqryR5p3xEPBQcXBJES8K\n" +
                     "oQon6A==";
 
-    private String previousAppResidentOrgId;
+    private String previousAccessingOrgId;
 
     /*
      Tests that exercise organization qualified behaviour mutate the thread local carbon context. Snapshot it before
@@ -156,15 +156,15 @@ public class JWTValidatorTest {
     @BeforeMethod
     public void captureCarbonContext() {
 
-        previousAppResidentOrgId = PrivilegedCarbonContext.getThreadLocalCarbonContext()
-                .getApplicationResidentOrganizationId();
+        previousAccessingOrgId = PrivilegedCarbonContext.getThreadLocalCarbonContext()
+                .getAccessingOrganizationId();
     }
 
     @AfterMethod
     public void restoreCarbonContext() {
 
         PrivilegedCarbonContext.getThreadLocalCarbonContext()
-                .setApplicationResidentOrganizationId(previousAppResidentOrgId);
+                .setAccessingOrganizationId(previousAccessingOrgId);
     }
 
     @BeforeClass
