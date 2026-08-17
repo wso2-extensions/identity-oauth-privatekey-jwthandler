@@ -866,6 +866,11 @@ public class JWTValidator {
 
     /**
      * Validate whether the request signing algorithm is configured for the application.
+     * <p>
+     * The algorithm configured for the application can be stored either as a JWS algorithm name (e.g. PS256) or as
+     * a Java signature algorithm name (e.g. SHA256withRSA), while the request always carries the JWS algorithm name.
+     * Hence the configured value is compared against the request value both directly and after mapping it to its
+     * equivalent JWS algorithm name.
      *
      * @param requestSigningAlgorithm     The request signed algorithm.
      * @param clientId                    Client ID of the application.
@@ -878,14 +883,39 @@ public class JWTValidator {
         //   Obtain the signing algorithm configured for the application.
         List<String> configuredSigningAlgorithms = getConfiguredSigningAlgorithm(clientId);
         //  Validate whether the JWT signing algorithm is configured for the application.
-        if (configuredSigningAlgorithms.isEmpty() || configuredSigningAlgorithms.contains(requestSigningAlgorithm)) {
+        if (configuredSigningAlgorithms.isEmpty()) {
             return true;
-        } else {
-            if (log.isDebugEnabled()) {
-                log.debug("JWT signed algorithm: " + requestSigningAlgorithm + " does not match with the " +
-                        "configured algorithms: " + configuredSigningAlgorithms);
+        }
+        for (String configuredSigningAlgorithm : configuredSigningAlgorithms) {
+            if (StringUtils.equals(configuredSigningAlgorithm, requestSigningAlgorithm)
+                    || StringUtils.equals(mapToJWSAlgorithmName(configuredSigningAlgorithm),
+                    requestSigningAlgorithm)) {
+                return true;
             }
-            return false;
+        }
+        if (log.isDebugEnabled()) {
+            log.debug("JWT signed algorithm: " + requestSigningAlgorithm + " does not match with the " +
+                    "configured algorithms: " + configuredSigningAlgorithms);
+        }
+        return false;
+    }
+
+    /**
+     * Map a signature algorithm name configured for the application to its equivalent JWS algorithm name.
+     *
+     * @param signatureAlgorithm Signature algorithm name configured for the application.
+     * @return The equivalent JWS algorithm name, or null if the value cannot be mapped.
+     */
+    private String mapToJWSAlgorithmName(String signatureAlgorithm) {
+
+        try {
+            return OAuth2Util.mapSignatureAlgorithmForJWSAlgorithm(signatureAlgorithm).getName();
+        } catch (IdentityOAuth2Exception e) {
+            if (log.isDebugEnabled()) {
+                log.debug("Unable to map the configured signature algorithm: " + signatureAlgorithm +
+                        " to a JWS algorithm name.", e);
+            }
+            return null;
         }
     }
 
