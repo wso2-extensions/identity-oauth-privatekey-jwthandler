@@ -43,6 +43,7 @@ import javax.servlet.http.HttpServletRequest;
 import static org.apache.commons.lang.StringUtils.isEmpty;
 import static org.apache.commons.lang.StringUtils.isNotEmpty;
 import static org.wso2.carbon.identity.oauth.common.OAuthConstants.OIDCConfigProperties.DEFAULT_VALUE_FOR_PREVENT_TOKEN_REUSE;
+import static org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.Constants.AGENT_JWT_ASSERTION_TYPE;
 import static org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.Constants.AUDIENCE_CLAIM;
 import static org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.Constants.DEFAULT_AUDIENCE;
 import static org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.Constants.DEFAULT_ENABLE_JTI_CACHE;
@@ -149,13 +150,21 @@ public class PrivateKeyJWTClientAuthenticator extends AbstractOAuthClientAuthent
      * @param httpServletRequest      Http servelet request.
      * @param bodyParameters          Map of request body params.
      * @param oAuthClientAuthnContext OAuthClientAuthnContext.
-     * @return jwt 'sub' value as the client id
+     * @return jwt 'sub' value as the client id, or null if the assertion is not a private key JWT
      * @throws OAuthClientAuthnException
      */
     @Override
     public String getClientId(HttpServletRequest httpServletRequest, Map<String, List> bodyParameters,
                               OAuthClientAuthnContext oAuthClientAuthnContext) throws OAuthClientAuthnException {
 
+        /*
+         * OAuthClientAuthnService#extractClientId calls this directly, without consulting canAuthenticate, and takes
+         * the first non-blank answer. An agent JWT assertion is a different credential whose 'sub' is the agent id
+         * rather than a client id, so it is left to the authenticator that owns that assertion type to resolve.
+         */
+        if (AGENT_JWT_ASSERTION_TYPE.equals(getBodyParameters(bodyParameters).get(OAUTH_JWT_ASSERTION_TYPE))) {
+            return null;
+        }
         SignedJWT signedJWT = getSignedJWT(bodyParameters, oAuthClientAuthnContext);
         JWTClaimsSet claimsSet = jwtValidator.getClaimSet(signedJWT);
         return jwtValidator.resolveSubject(claimsSet);
