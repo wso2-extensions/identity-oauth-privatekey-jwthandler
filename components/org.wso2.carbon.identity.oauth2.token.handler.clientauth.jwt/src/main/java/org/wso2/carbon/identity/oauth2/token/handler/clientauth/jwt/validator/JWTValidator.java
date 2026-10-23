@@ -178,6 +178,13 @@ public class JWTValidator {
                 endpoint URL) should be supported for PAR and not just a single valid audience.
                 https://datatracker.ietf.org/doc/html/rfc9126 */
                     acceptedAudienceList = getValidAudiences(tenantDomain, requestUrl);
+                    /* When FAPI 2.0 is enabled for the organization, the issuer identifier differs from the token
+                    endpoint URL. Hence, the issuer identifier is also accepted for token requests. */
+                    if (Collections.disjoint(acceptedAudienceList, audience)
+                            && OAuth2Util.isFapi2Enabled(tenantDomain)) {
+                        acceptedAudienceList = new ArrayList<>(acceptedAudienceList);
+                        acceptedAudienceList.add(this.getIdTokenIssuer(tenantDomain));
+                    }
                 }
             } catch (InvalidOAuthClientException e) {
                 throw new OAuthClientAuthnException("Error occurred while retrieving client information.",

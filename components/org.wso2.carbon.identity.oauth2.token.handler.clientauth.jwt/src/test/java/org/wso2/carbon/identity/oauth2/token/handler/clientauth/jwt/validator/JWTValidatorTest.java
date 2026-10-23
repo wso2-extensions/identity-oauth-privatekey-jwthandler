@@ -35,6 +35,7 @@ import org.wso2.carbon.identity.application.common.model.IdentityProvider;
 import org.wso2.carbon.identity.application.common.model.Property;
 import org.wso2.carbon.identity.application.common.model.ServiceProvider;
 import org.wso2.carbon.identity.application.common.util.IdentityApplicationConstants;
+import org.wso2.carbon.identity.application.common.util.IdentityApplicationManagementUtil;
 import org.wso2.carbon.identity.application.mgt.ApplicationManagementService;
 import org.wso2.carbon.identity.common.testng.WithAxisConfiguration;
 import org.wso2.carbon.identity.common.testng.WithCarbonHome;
@@ -44,6 +45,7 @@ import org.wso2.carbon.identity.common.testng.WithRealmService;
 import org.wso2.carbon.identity.core.ServiceURLBuilder;
 import org.wso2.carbon.identity.core.util.IdentityTenantUtil;
 import org.wso2.carbon.identity.core.util.IdentityUtil;
+import org.wso2.carbon.identity.discovery.DiscoveryUtil;
 import org.wso2.carbon.identity.oauth.dao.OAuthAppDO;
 import org.wso2.carbon.identity.oauth2.client.authentication.OAuthClientAuthnException;
 import org.wso2.carbon.identity.oauth2.fapi.models.FapiProfileEnum;
@@ -76,6 +78,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
@@ -125,6 +128,7 @@ public class JWTValidatorTest {
     public static final String MANDATORY = "mandatory";
     public static final String ID_TOKEN_ISSUER_ID = "http://localhost:9443/oauth2/token";
     public static final String PAR_ENDPOINT = "https://localhost:9443/oauth2/par";
+    public static final String ISSUER_DIFFERENT_FROM_TOKEN_EP = "http://localhost:9443";
     private KeyStore clientKeyStore;
     private KeyStore serverKeyStore;
     private X509Certificate cert;
@@ -388,6 +392,66 @@ public class JWTValidatorTest {
 
             assertTrue(jwtValidator.isValidAssertion(SignedJWT.parse(jwt)),
                     "FAPI 2 client assertions with issuer audience should pass validation.");
+        }
+    }
+
+    @DataProvider(name = "issuerAudienceDataProvider")
+    public Object[][] issuerAudienceDataProvider() {
+
+        return new Object[][]{
+                {"3026", ISSUER_DIFFERENT_FROM_TOKEN_EP, true, true},
+                {"3027", ISSUER_DIFFERENT_FROM_TOKEN_EP, false, false},
+                {"3028", ISSUER_DIFFERENT_FROM_TOKEN_EP + "/invalid", true, false},
+        };
+    }
+
+    @Test(dataProvider = "issuerAudienceDataProvider")
+    public void testValidateFapi1TokenWithIssuerAudience(String jti, String audience, boolean isFapi2Enabled,
+                                                          boolean expected) throws Exception {
+
+        Key key = clientKeyStore.getKey("wso2carbon", "wso2carbon".toCharArray());
+        String jwt = buildJWT(TEST_FAPI_CLIENT_ID_1, TEST_FAPI_CLIENT_ID_1, jti, audience, "RS512", key, 0);
+
+        mockApplicationManagementService();
+        try (MockedStatic<IdentityProviderManager> mockedIdentityProviderManager = mockIdentityProviderManager();
+             MockedStatic<FapiUtil> mockedFapiUtil = mockStatic(FapiUtil.class);
+             MockedStatic<DiscoveryUtil> mockedDiscoveryUtil = mockStatic(DiscoveryUtil.class);
+             MockedStatic<OAuth2Util> mockedOAuth2Util = Mockito.mockStatic(OAuth2Util.class,
+                     Mockito.CALLS_REAL_METHODS);
+             MockedStatic<IdentityUtil> mockedIdentityUtil = Mockito.mockStatic(IdentityUtil.class,
+                     Mockito.CALLS_REAL_METHODS);
+             MockedStatic<IdentityApplicationManagementUtil> mockedIdentityApplicationManagementUtil =
+                     mockStatic(IdentityApplicationManagementUtil.class)) {
+            // Resident IdP without token and PAR endpoint properties, so that the configured values are used.
+            mockedIdentityApplicationManagementUtil.when(() -> IdentityApplicationManagementUtil
+                    .getFederatedAuthenticator(any(), anyString())).thenReturn(new FederatedAuthenticatorConfig());
+            mockedFapiUtil.when(() -> FapiUtil.isFapiConformantApp(TEST_FAPI_CLIENT_ID_1,
+                    FapiProfileEnum.FAPI2_SECURITY)).thenReturn(false);
+            mockedFapiUtil.when(() -> FapiUtil.isFapiConformantApp(TEST_FAPI_CLIENT_ID_1)).thenReturn(true);
+            // The issuer differs from the token endpoint when FAPI 2.0 is enabled for the organization.
+            mockedOAuth2Util.when(() -> OAuth2Util.isFapi2Enabled(anyString())).thenReturn(isFapi2Enabled);
+            mockedDiscoveryUtil.when(DiscoveryUtil::isUseEntityIdAsIssuerInOidcDiscovery).thenReturn(true);
+            mockedOAuth2Util.when(() -> OAuth2Util.getIdTokenIssuer(anyString()))
+                    .thenReturn(ISSUER_DIFFERENT_FROM_TOKEN_EP);
+            mockedIdentityUtil.when(() -> IdentityUtil.getProperty("OAuth.OpenIDConnect.IDTokenIssuerID"))
+                    .thenReturn(ID_TOKEN_ISSUER_ID);
+            mockedIdentityUtil.when(() -> IdentityUtil.getProperty(Constants.OAUTH2_PAR_URL_CONFIG))
+                    .thenReturn(PAR_ENDPOINT);
+            mockedIdentityUtil.when(() -> IdentityUtil.getPropertyAsList(
+                    "OAuth.OpenIDConnect.FAPI.AllowedSignatureAlgorithms.AllowedSignatureAlgorithm"))
+                    .thenReturn(Arrays.asList("PS256", "ES256", "RS512"));
+
+            checkIfTenantIdColumnIsAvailableInIdnOidcAuthTable();
+            JWTValidator jwtValidator = getJWTValidator(new Properties());
+
+            boolean isValid;
+            try {
+                isValid = jwtValidator.isValidAssertion(SignedJWT.parse(jwt));
+            } catch (OAuthClientAuthnException e) {
+                isValid = false;
+            }
+            assertEquals(isValid, expected, "Client assertion with audience: " + audience
+                    + " when FAPI 2.0 enabled: " + isFapi2Enabled);
         }
     }
 
