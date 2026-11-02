@@ -347,19 +347,19 @@ public class JWTValidator {
      */
     private boolean validateAudienceFormat(List<String> audience, String consumerKey) throws OAuthClientAuthnException {
 
+        boolean isFapi2App;
         try {
-            if (FapiUtil.isFapiConformantApp(consumerKey, FapiProfileEnum.FAPI2_SECURITY)) {
-                if (audience.size() > 1) {
-                    if (log.isDebugEnabled()) {
-                        log.debug("Invalid FAPI 2.0 client assertion: multiple audiences. clientID: " + consumerKey);
-                    }
-                    throw new OAuthClientAuthnException("Client assertion contains multiple audience values.",
-                            OAuth2ErrorCodes.INVALID_REQUEST);
-                }
-            }
+            isFapi2App = FapiUtil.isFapiConformantApp(consumerKey, FapiProfileEnum.FAPI2_SECURITY);
         } catch (InvalidOAuthClientException | IdentityOAuth2Exception e) {
             throw new OAuthClientAuthnException("Error occurred while retrieving client information.",
                     OAuth2ErrorCodes.INVALID_CLIENT);
+        }
+        if (isFapi2App && audience.size() > 1) {
+            if (log.isDebugEnabled()) {
+                log.debug("Invalid FAPI 2.0 client assertion: multiple audiences. clientID: " + consumerKey);
+            }
+            throw new OAuthClientAuthnException("Client assertion contains multiple audience values.",
+                    OAuth2ErrorCodes.INVALID_REQUEST);
         }
         return true;
     }
