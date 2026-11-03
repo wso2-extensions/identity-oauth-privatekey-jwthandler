@@ -581,6 +581,7 @@ public class JWTValidator {
         List<String> validAudiences = new ArrayList<>();
         String tokenEndpoint = null;
         String parEndpoint = null;
+        String residentIdpEntityId = null;
         IdentityProvider residentIdP;
         try {
             residentIdP = IdentityProviderManager.getInstance()
@@ -592,11 +593,16 @@ public class JWTValidator {
                     IdentityApplicationManagementUtil.getProperty(oidcFedAuthn.getProperties(), PROP_TOKEN_EP);
             Property parEndpointFromResidentIdp = IdentityApplicationManagementUtil.getProperty(oidcFedAuthn
                     .getProperties(), Constants.OAUTH2_PAR_URL_REF);
+            Property idpEntityId = IdentityApplicationManagementUtil.getProperty(oidcFedAuthn.getProperties(),
+                    IDP_ENTITY_ID);
             if (tokenEndpointFromResidentIdp != null) {
                 tokenEndpoint = tokenEndpointFromResidentIdp.getValue();
             }
             if (parEndpointFromResidentIdp != null) {
                 parEndpoint = parEndpointFromResidentIdp.getValue();
+            }
+            if (idpEntityId != null) {
+                residentIdpEntityId = idpEntityId.getValue();
             }
         } catch (IdentityProviderManagementException e) {
             String message = "Error while loading OAuth2TokenEPUrl and ParEPUrl of the resident IDP of tenant: "
@@ -617,6 +623,7 @@ public class JWTValidator {
                         .getAbsolutePublicURL();
                 parEndpoint = ServiceURLBuilder.create().addPath(OAUTH2_PAR_EP_URL).build(mtlsHostname)
                         .getAbsolutePublicURL();
+                residentIdpEntityId = null;
             } catch (URLBuilderException e) {
                 String errorMsg = String.format("Error while building the absolute url of the context: '%s',  for the" +
                         " tenant domain: '%s'", OAUTH2_TOKEN_EP_URL, tenantDomain);
@@ -655,6 +662,12 @@ public class JWTValidator {
         }
         validAudiences.add(tokenEndpoint);
         validAudiences.add(parEndpoint);
+        /* The resident IdP entity ID was accepted as the token endpoint audience in earlier versions. Hence, it is
+        still accepted along with the token endpoint URL, so that the existing clients keep working when the entity
+        ID is different from the token endpoint URL. */
+        if (StringUtils.isNotEmpty(residentIdpEntityId) && !validAudiences.contains(residentIdpEntityId)) {
+            validAudiences.add(residentIdpEntityId);
+        }
 
         String accessingOrgId = PrivilegedCarbonContext.getThreadLocalCarbonContext()
                 .getAccessingOrganizationId();
