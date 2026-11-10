@@ -129,6 +129,7 @@ public class JWTValidatorTest {
     public static final String ID_TOKEN_ISSUER_ID = "http://localhost:9443/oauth2/token";
     public static final String PAR_ENDPOINT = "https://localhost:9443/oauth2/par";
     public static final String ISSUER_DIFFERENT_FROM_TOKEN_EP = "http://localhost:9443";
+    public static final String CUSTOM_IDP_ENTITY_ID = "https://auth.example.com";
     private KeyStore clientKeyStore;
     private KeyStore serverKeyStore;
     private X509Certificate cert;
@@ -452,6 +453,67 @@ public class JWTValidatorTest {
             }
             assertEquals(isValid, expected, "Client assertion with audience: " + audience
                     + " when FAPI 2.0 enabled: " + isFapi2Enabled);
+        }
+    }
+
+    @DataProvider(name = "residentIdpEntityIdAudienceDataProvider")
+    public Object[][] residentIdpEntityIdAudienceDataProvider() {
+
+        return new Object[][]{
+                {"3029", CUSTOM_IDP_ENTITY_ID, true},
+                {"3030", ID_TOKEN_ISSUER_ID, true},
+                {"3031", CUSTOM_IDP_ENTITY_ID + "/invalid", false},
+        };
+    }
+
+    @Test(dataProvider = "residentIdpEntityIdAudienceDataProvider")
+    public void testValidateTokenWithResidentIdpEntityIdAudience(String jti, String audience, boolean expected)
+            throws Exception {
+
+        Key key = clientKeyStore.getKey("wso2carbon", "wso2carbon".toCharArray());
+        String jwt = buildJWT(TEST_FAPI_CLIENT_ID_1, TEST_FAPI_CLIENT_ID_1, jti, audience, "RS512", key, 0);
+
+        // Resident IdP with an entity ID that is different from the token endpoint URL.
+        Property idpEntityId = new Property();
+        idpEntityId.setName("IdPEntityId");
+        idpEntityId.setValue(CUSTOM_IDP_ENTITY_ID);
+        Property tokenEndpoint = new Property();
+        tokenEndpoint.setName("OAuth2TokenEPUrl");
+        tokenEndpoint.setValue(ID_TOKEN_ISSUER_ID);
+        FederatedAuthenticatorConfig oidcAuthenticatorConfig = new FederatedAuthenticatorConfig();
+        oidcAuthenticatorConfig.setProperties(new Property[]{idpEntityId, tokenEndpoint});
+
+        mockApplicationManagementService();
+        try (MockedStatic<IdentityProviderManager> mockedIdentityProviderManager = mockIdentityProviderManager();
+             MockedStatic<FapiUtil> mockedFapiUtil = mockStatic(FapiUtil.class);
+             MockedStatic<OAuth2Util> mockedOAuth2Util = Mockito.mockStatic(OAuth2Util.class,
+                     Mockito.CALLS_REAL_METHODS);
+             MockedStatic<IdentityUtil> mockedIdentityUtil = Mockito.mockStatic(IdentityUtil.class,
+                     Mockito.CALLS_REAL_METHODS);
+             MockedStatic<IdentityApplicationManagementUtil> mockedIdentityApplicationManagementUtil =
+                     Mockito.mockStatic(IdentityApplicationManagementUtil.class, Mockito.CALLS_REAL_METHODS)) {
+            mockedIdentityApplicationManagementUtil.when(() -> IdentityApplicationManagementUtil
+                    .getFederatedAuthenticator(any(), anyString())).thenReturn(oidcAuthenticatorConfig);
+            mockedFapiUtil.when(() -> FapiUtil.isFapiConformantApp(TEST_FAPI_CLIENT_ID_1,
+                    FapiProfileEnum.FAPI2_SECURITY)).thenReturn(false);
+            mockedFapiUtil.when(() -> FapiUtil.isFapiConformantApp(TEST_FAPI_CLIENT_ID_1)).thenReturn(true);
+            mockedOAuth2Util.when(() -> OAuth2Util.isFapi2Enabled(anyString())).thenReturn(false);
+            mockedIdentityUtil.when(() -> IdentityUtil.getProperty(Constants.OAUTH2_PAR_URL_CONFIG))
+                    .thenReturn(PAR_ENDPOINT);
+            mockedIdentityUtil.when(() -> IdentityUtil.getPropertyAsList(
+                    "OAuth.OpenIDConnect.FAPI.AllowedSignatureAlgorithms.AllowedSignatureAlgorithm"))
+                    .thenReturn(Arrays.asList("PS256", "ES256", "RS512"));
+
+            checkIfTenantIdColumnIsAvailableInIdnOidcAuthTable();
+            JWTValidator jwtValidator = getJWTValidator(new Properties());
+
+            boolean isValid;
+            try {
+                isValid = jwtValidator.isValidAssertion(SignedJWT.parse(jwt));
+            } catch (OAuthClientAuthnException e) {
+                isValid = false;
+            }
+            assertEquals(isValid, expected, "Client assertion with audience: " + audience);
         }
     }
 
