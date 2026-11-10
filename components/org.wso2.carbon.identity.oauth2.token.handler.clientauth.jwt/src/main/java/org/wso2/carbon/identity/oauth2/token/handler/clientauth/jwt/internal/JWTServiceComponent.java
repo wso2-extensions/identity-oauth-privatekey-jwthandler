@@ -30,6 +30,7 @@ import org.osgi.service.component.annotations.ReferencePolicy;
 import org.wso2.carbon.identity.configuration.mgt.core.ConfigurationManager;
 import org.wso2.carbon.identity.core.util.IdentityCoreInitializedEvent;
 import org.wso2.carbon.identity.oauth2.client.authentication.OAuthClientAuthenticator;
+import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.AgentJWTClientAuthenticator;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.PrivateKeyJWTClientAuthenticator;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.core.JWTClientAuthenticatorMgtService;
 import org.wso2.carbon.identity.oauth2.token.handler.clientauth.jwt.core.JWTClientAuthenticatorMgtServiceImpl;
@@ -79,8 +80,11 @@ public class JWTServiceComponent {
                     null);
             bundleContext.registerService(JWTClientAuthenticatorMgtService.class.getName(),
                     new JWTClientAuthenticatorMgtServiceImpl(), null);
+            bundleContext.registerService(OAuthClientAuthenticator.class.getName(),
+                    new AgentJWTClientAuthenticator(), null);
             if (log.isDebugEnabled()) {
                 log.debug("Private Key JWT client handler is activated");
+                log.debug("Agent JWT client handler is activated");
             }
         } catch (Throwable e) {
             log.fatal("Error while activating the Private Key JWT client handler. ", e);

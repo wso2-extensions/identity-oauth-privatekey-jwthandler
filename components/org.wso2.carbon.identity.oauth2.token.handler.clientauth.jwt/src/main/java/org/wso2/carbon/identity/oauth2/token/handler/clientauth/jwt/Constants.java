@@ -46,6 +46,37 @@ public class Constants {
     public static final String OAUTH2_PAR_URL_REF = "OAuth2ParEPUrl";
     public static final String OAUTH2_PAR_URL_CONFIG = "OAuth.OAuth2ParEPUrl";
 
+    /*
+     * Agent JWT client authentication.
+     *
+     * A private (non-IETF) client assertion type for authenticating an autonomous agent on the CIBA back channel
+     * with the agent access token that the authorization server itself issued to the agent.
+     */
+    public static final String AGENT_JWT_ASSERTION_TYPE =
+            "urn:wso2:params:oauth:client-assertion-type:agent-jwt-bearer";
+    public static final String AGENT_JWT_CLIENT_AUTH_METHOD = "agent_jwt";
+    public static final String AGENT_JWT_CLIENT_AUTH_METHOD_DISPLAY_NAME = "Agent JWT";
+    public static final String AUTHENTICATOR_TYPE_AGENT_JWT = "agentJWT";
+
+    // Context parameter caching the parsed agent token across getClientId and authenticateClient.
+    public static final String AGENT_TOKEN = "agentToken";
+
+    // Agent token claims.
+    public static final String AUTHENTICATED_ENTITY_CLAIM = "aut";
+    public static final String AGENT_ENTITY_TYPE = "AGENT";
+    public static final String AUTHORIZED_PARTY_CLAIM = "azp";
+    public static final String CLIENT_ID_CLAIM = "client_id";
+
+    // Identity claims carrying the account state of the agent the token was issued to.
+    public static final String ACCOUNT_LOCKED_CLAIM = "http://wso2.org/claims/identity/accountLocked";
+    public static final String ACCOUNT_DISABLED_CLAIM = "http://wso2.org/claims/identity/accountDisabled";
+
+    public static final String CLIENT_ID_PARAM = "client_id";
+    public static final String GRANT_TYPE_PARAM = "grant_type";
+    public static final String CIBA_GRANT_TYPE = "urn:openid:params:grant-type:ciba";
+    public static final String CIBA_ENDPOINT_PATH = "/oauth2/ciba";
+    public static final String TOKEN_ENDPOINT_PATH = "/oauth2/token";
+
     //query keys
     public static final String GET_JWT_ID = "GET_JWT_ID";
     public static final String GET_JWT = "GET_JWT";
